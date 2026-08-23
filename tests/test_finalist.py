@@ -12,6 +12,22 @@ from judge import llm
 from server import _reconcile_top_picks
 
 
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """Build no client and make no call, for every test in this module.
+
+    _get_client reads OPENROUTER_API_KEY, so without this a test only passes on
+    a machine that happens to have a real key in its environment. CI does not.
+
+    Module scoped rather than per class, because it was per class, the next
+    class added to this file did not inherit it, and it failed in CI for
+    exactly the reason this docstring already gave.
+    """
+    # `object` is callable and returns an instance, which is all the code under
+    # test does with the result.
+    monkeypatch.setattr(llm, "_get_client", object)
+
+
 def completed(*names):
     return [{"team_name": n} for n in names]
 
@@ -70,18 +86,6 @@ class TestTheFinalistRoundReadsThePitch:
     def test_the_default_covers_a_full_pitch(self):
         # Real transcripts in the wild run to roughly 4,700 characters.
         assert llm.FINALIST_TRANSCRIPT_CHARS >= 4700
-
-    @pytest.fixture(autouse=True)
-    def _no_network(self, monkeypatch):
-        """Build no client and make no call.
-
-        _get_client reads OPENROUTER_API_KEY, so without this the test only
-        passes on a machine that happens to have a real key in its
-        environment. CI does not, and said so.
-        """
-        # `object` is callable and returns an instance, which is all the code
-        # under test does with the result.
-        monkeypatch.setattr(llm, "_get_client", object)
 
     def _prompt_for(self, transcript, monkeypatch):
         captured = {}
