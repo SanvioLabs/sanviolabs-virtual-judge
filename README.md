@@ -69,6 +69,11 @@ npm run db:reset     # delete it and start clean
 npm run reset        # delete the database and every recorded audio file
 ```
 
+If you open a database from before events existed, the schema migration drops
+every submission, score, review and PRFAQ in it. It copies the file to
+`judge.pre-migration-{timestamp}.db` first and logs where, so the old record is
+recoverable, but the running database will be empty.
+
 `judge.db` is the whole event record. Seven tables: `rubrics`, `events`,
 `submissions` (transcripts included), `scores`, `reviews`, `finalist_runs`, and
 `prfaqs`. It is gitignored, it never leaves the machine, and copying that one file

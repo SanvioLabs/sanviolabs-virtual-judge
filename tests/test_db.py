@@ -364,3 +364,81 @@ class TestUpdateColumnsAreNotFreeText:
         _, event_id = self._sub()
         db.update_event(event_id, name="Renamed")
         assert db.get_event(event_id)["name"] == "Renamed"
+
+
+class TestTheDestructiveMigrationIsRecoverable:
+    """init_db drops five tables when it meets a pre-events database. It runs
+    at startup, so without a backup an operator opening last season's file
+    loses the whole record and is never told."""
+
+    def _old_schema_db(self, path):
+        conn = sqlite3.connect(str(path))
+        conn.executescript("""
+            CREATE TABLE rubrics (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+                categories_json TEXT NOT NULL, scale_min INTEGER, scale_max INTEGER,
+                calibration TEXT, judge_persona TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE events (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+                rubric_id TEXT NOT NULL, status TEXT, created_at TEXT NOT NULL);
+            -- The old shape: no event_id.
+            CREATE TABLE submissions (
+                id TEXT PRIMARY KEY, team_name TEXT NOT NULL, rubric_id TEXT NOT NULL,
+                audio_path TEXT, transcript TEXT, status TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE scores (
+                id TEXT PRIMARY KEY, submission_id TEXT NOT NULL, category TEXT,
+                score INTEGER, rationale TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE reviews (
+                id TEXT PRIMARY KEY, submission_id TEXT NOT NULL, overall_score REAL,
+                summary TEXT, audio_path TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE finalist_runs (
+                id TEXT PRIMARY KEY, event_id TEXT, rubric_id TEXT,
+                top_picks_json TEXT, reasoning TEXT, audio_path TEXT, created_at TEXT NOT NULL);
+            INSERT INTO submissions VALUES
+                ('s1', 'Last Season', 'r1', NULL, 'their pitch', 'complete', '2026-01-01');
+        """)
+        conn.commit()
+        conn.close()
+
+    def test_the_old_rows_survive_in_a_backup(self, tmp_path):
+        old = tmp_path / "judge.db"
+        self._old_schema_db(old)
+        with patch.object(db, "DB_PATH", old):
+            db.init_db()
+
+        backups = list(tmp_path.glob("judge.pre-migration-*.db"))
+        assert len(backups) == 1, "the migration left no backup"
+
+        conn = sqlite3.connect(str(backups[0]))
+        rows = conn.execute("SELECT team_name, transcript FROM submissions").fetchall()
+        conn.close()
+        assert rows == [("Last Season", "their pitch")]
+
+    def test_the_migration_still_produces_the_new_schema(self, tmp_path):
+        old = tmp_path / "judge.db"
+        self._old_schema_db(old)
+        with patch.object(db, "DB_PATH", old):
+            db.init_db()
+            rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+            event_id = db.create_event("E", rubric_id, "")
+            sub_id = db.create_submission("New Team", event_id, rubric_id)
+            assert db.get_submission(sub_id)["event_id"] == event_id
+
+    def test_a_current_database_is_not_backed_up_or_touched(self, tmp_path):
+        current = tmp_path / "judge.db"
+        with patch.object(db, "DB_PATH", current):
+            db.init_db()
+            rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+            event_id = db.create_event("E", rubric_id, "")
+            sub_id = db.create_submission("Keep Me", event_id, rubric_id)
+            db.init_db()  # restart
+            assert db.get_submission(sub_id)["team_name"] == "Keep Me"
+        assert list(tmp_path.glob("*pre-migration*")) == []
+
+    def test_the_backup_is_announced(self, tmp_path, caplog):
+        old = tmp_path / "judge.db"
+        self._old_schema_db(old)
+        with patch.object(db, "DB_PATH", old), caplog.at_level("WARNING"):
+            db.init_db()
+        assert "pre-migration" in caplog.text
+        assert "dropped" in caplog.text

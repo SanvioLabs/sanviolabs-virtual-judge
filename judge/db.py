@@ -1,6 +1,7 @@
 """SQLite database for Virtual Judge."""
 
 import json
+import logging
 import os
 import sqlite3
 import uuid
@@ -12,6 +13,8 @@ from pathlib import Path
 # Overridable so a test run does not write into the event database sitting in
 # the project root. The Playwright suite starts a real server, and without this
 # every browser test filed its fixtures alongside real hackathon results.
+logger = logging.getLogger(__name__)
+
 DB_PATH = Path(os.environ.get("VJ_DB_PATH") or Path(__file__).parent.parent / "judge.db")
 
 
@@ -144,11 +147,56 @@ def _migrate(conn):
             conn.commit()
 
 
-def _migrate_event_id(conn):
-    """Old schema detected — recreate with event_id.
+def _backup_before_destructive_migration(conn) -> Path | None:
+    """Take a consistent copy of the database before dropping anything.
 
-    Drop and recreate (data loss acceptable for pre-release).
+    The migration below destroys every submission, score, review, PRFAQ and
+    finalist round. It runs automatically at startup, so without this an
+    operator opening an older database loses the whole record of an event and
+    is never told. The README calls judge.db the complete event record.
+
+    Copied through sqlite's own backup API rather than the filesystem, because
+    the database runs in WAL mode and a file copy can miss committed pages
+    still sitting in the log.
     """
+    if not DB_PATH.exists():
+        return None
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    backup_path = DB_PATH.with_name(f"{DB_PATH.stem}.pre-migration-{stamp}.db")
+    try:
+        with connection_to(backup_path) as target:
+            conn.backup(target)
+    except sqlite3.Error as e:
+        logger.error("Could not back up %s before migrating: %s", DB_PATH, e)
+        return None
+
+    logger.warning(
+        "Migrating an old database. Every submission, score, review and PRFAQ in it "
+        "is being dropped. A copy of the original is at %s",
+        backup_path,
+    )
+    return backup_path
+
+
+@contextmanager
+def connection_to(path: Path) -> Iterator[sqlite3.Connection]:
+    """A connection to a specific file, closed on the way out."""
+    conn = sqlite3.connect(str(path))
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _migrate_event_id(conn):
+    """Old schema detected. Recreate with event_id.
+
+    Destructive: the tables below are dropped. The database is copied aside
+    first and the location is logged, so the loss is recoverable and announced
+    rather than silent.
+    """
+    _backup_before_destructive_migration(conn)
     conn.executescript("""
         DROP TABLE IF EXISTS prfaqs;
         DROP TABLE IF EXISTS finalist_runs;
