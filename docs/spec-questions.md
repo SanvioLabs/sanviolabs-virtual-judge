@@ -22,6 +22,12 @@ reading the code will never tell you which.
 Ordered by what the answer changes, not by where it was found. The first four
 are a call agenda. The rest is the backlog.
 
+**Pinned, not answered.** `tests/test_tunables.py` holds every value below to
+what it currently is, so changing one is a deliberate act with a test to
+update rather than a drift nobody notices until a room is waiting. That is a
+guard against accident. It is not an answer, and none of these close until
+somebody says why the number is the number.
+
 ---
 
 Q1. Is unauthenticated access from the local network a requirement or an accident?
