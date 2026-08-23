@@ -144,6 +144,12 @@ After all teams have gone:
 🏆 Finalist tab → Run Finalist Round → Top 3 announced via voice
 ```
 
+A score that came out wrong, a review whose audio failed, a rubric you changed
+after the fact: hit **Re-judge** on that team in the Submissions tab. Their pitch
+runs through the whole pipeline again from the recording, and the new scores
+replace the old ones. It asks first, because the old result may already have been
+read out.
+
 Then, once the room has cleared:
 
 ```

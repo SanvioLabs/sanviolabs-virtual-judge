@@ -1357,3 +1357,100 @@ class TestRecordNowJudgeLater:
         assert len(body["judged"]) == 1
         assert len(body["failed"]) == 1
         assert body["failed"][0]["reason"]
+
+
+class TestRejudgingAJudgedTeam:
+    """SPEC.md R48.
+
+    A score that came out wrong, a review whose audio failed, a rubric that
+    changed after the fact: all of them want the same thing, which is to run
+    the pitch through again. The pipeline always supported it and nothing in
+    the UI reached it, so the only route was deleting the team and losing the
+    recording with them.
+    """
+
+    async def _make_judged(self, client, mocks, score, summary):
+        mock_transcribe, mock_score, mock_speak = mocks
+        mock_transcribe.return_value = "the pitch as recorded"
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": score, "rationale": summary}],
+            "summary": summary,
+        }
+        mock_speak.return_value = Path("/tmp/f.mp3")
+        sub = await _create_submission(client, "Rejudged")
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio bytes", "audio/webm")},
+        )
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+        return sub
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_a_completed_submission_can_be_judged_again(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        mocks = (mock_transcribe, mock_score, mock_speak)
+        sub = await self._make_judged(client, mocks, 2, "first pass")
+
+        first = (await client.get(f"/api/submissions/{sub['id']}")).json()
+        assert first["review"]["overall_score"] == 2.0
+
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 5, "rationale": "second pass"}],
+            "summary": "second pass",
+        }
+        res = await client.post(f"/api/submissions/{sub['id']}/judge")
+        assert res.status_code == 200
+
+        again = (await client.get(f"/api/submissions/{sub['id']}")).json()
+        assert again["review"]["overall_score"] == 5.0
+        assert again["review"]["summary"] == "second pass"
+        assert again["status"] == "complete"
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_the_old_scores_are_replaced_not_added_to(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        mocks = (mock_transcribe, mock_score, mock_speak)
+        sub = await self._make_judged(client, mocks, 2, "first")
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 5, "rationale": "second"}],
+            "summary": "second",
+        }
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+
+        scores = (await client.get(f"/api/submissions/{sub['id']}")).json()["scores"]
+        assert len(scores) == 1
+        assert scores[0]["score"] == 5
+        assert scores[0]["rationale"] == "second"
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_it_reruns_from_the_recording_not_the_stored_transcript(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        """Pat's words: take the pitch and re-judge it. The audio is the input."""
+        mocks = (mock_transcribe, mock_score, mock_speak)
+        sub = await self._make_judged(client, mocks, 3, "first")
+        mock_transcribe.reset_mock()
+
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+        assert mock_transcribe.called, "re-judging skipped transcription"
+        assert str(mock_transcribe.call_args[0][0]).endswith(".webm")
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_a_rejudged_team_is_not_in_the_pending_backlog(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        """It has a review, so it is not work waiting to be done."""
+        mocks = (mock_transcribe, mock_score, mock_speak)
+        sub = await self._make_judged(client, mocks, 4, "done")
+        event_id = (await client.get(f"/api/submissions/{sub['id']}")).json()["event_id"]
+        assert (await client.get(f"/api/events/{event_id}/pending")).json() == []
