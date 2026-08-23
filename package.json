@@ -17,7 +17,8 @@
     "test:all": "npm run test && npm run test:e2e",
     "db:reset": "rm -f judge.db judge.db-wal judge.db-shm && echo 'Database reset.'",
     "audio:clean": "rm -rf audio_recordings/*.webm audio_recordings/*.mp3 && echo 'Audio files cleaned.'",
-    "reset": "npm run db:reset && npm run audio:clean"
+    "exports:clean": "rm -rf exports/* && echo 'Export bundles removed.'",
+    "reset": "npm run db:reset && npm run audio:clean && npm run exports:clean"
   },
   "devDependencies": {
     "@playwright/test": "1.52.0"

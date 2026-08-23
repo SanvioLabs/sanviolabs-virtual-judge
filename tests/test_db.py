@@ -518,3 +518,99 @@ class TestWhatABackupActuallyCovers:
         audio.mkdir()
         sub_id = self._judged_event(audio)
         assert Path(db.get_submission(sub_id)["audio_path"]).is_absolute()
+
+
+class TestRejudgingReplaces:
+    """SPEC.md R31.
+
+    Reviews and PRFAQs are unique on submission and replace on a second write.
+    Scores were the only one of the three left as a plain insert, so re-judging
+    a team appended a second set: eight rows for a four-category rubric, all
+    eight rendered. The overall score survived because numerator and
+    denominator doubled together, which is why it went unnoticed.
+    """
+
+    def _submission(self):
+        rubric_id = db.create_rubric("R", [
+            {"name": "Impact", "description": "i", "weight": 1},
+            {"name": "Craft", "description": "c", "weight": 1},
+        ])
+        event_id = db.create_event("E", rubric_id, "")
+        return db.create_submission("Team", event_id, rubric_id)
+
+    def test_a_second_scoring_replaces_the_first(self):
+        sub_id = self._submission()
+        db.save_scores(sub_id, [
+            {"category": "Impact", "score": 2, "rationale": "first run"},
+            {"category": "Craft", "score": 2, "rationale": "first run"},
+        ])
+        db.save_scores(sub_id, [
+            {"category": "Impact", "score": 5, "rationale": "second run"},
+            {"category": "Craft", "score": 4, "rationale": "second run"},
+        ])
+        scores = db.get_scores(sub_id)
+        assert len(scores) == 2
+        assert {s["category"]: s["score"] for s in scores} == {"Impact": 5, "Craft": 4}
+        assert all(s["rationale"] == "second run" for s in scores)
+
+    def test_a_third_run_does_not_accumulate(self):
+        sub_id = self._submission()
+        for n in range(3):
+            db.save_scores(sub_id, [{"category": "Impact", "score": n, "rationale": str(n)}])
+        assert len(db.get_scores(sub_id)) == 1
+
+    def test_another_submission_is_untouched(self):
+        keep = self._submission()
+        other = self._submission()
+        db.save_scores(keep, [{"category": "Impact", "score": 3, "rationale": "keep"}])
+        db.save_scores(other, [{"category": "Impact", "score": 1, "rationale": "other"}])
+        db.save_scores(other, [{"category": "Impact", "score": 2, "rationale": "again"}])
+        assert len(db.get_scores(keep)) == 1
+        assert db.get_scores(keep)[0]["score"] == 3
+
+    def test_the_review_already_replaced_and_still_does(self):
+        sub_id = self._submission()
+        db.save_review(sub_id, 2.0, "first", "/tmp/a.mp3", "spoken one")
+        db.save_review(sub_id, 4.5, "second", "/tmp/b.mp3", "spoken two")
+        review = db.get_review(sub_id)
+        assert review["overall_score"] == 4.5
+        assert review["summary"] == "second"
+
+
+class TestStatusIsOneOfOurs:
+    """SPEC.md R34. The value is constrained; the order is not, and the spec
+    says so rather than implying a state machine that does not exist."""
+
+    def _sub(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("E", rubric_id, "")
+        return db.create_submission("T", event_id, rubric_id)
+
+    @pytest.mark.parametrize(
+        "status", ["recording", "transcribing", "scoring", "speaking", "complete", "error"]
+    )
+    def test_every_status_the_pipeline_uses_is_accepted(self, status):
+        sub_id = self._sub()
+        db.update_submission(sub_id, status=status)
+        assert db.get_submission(sub_id)["status"] == status
+
+    def test_an_undefined_status_is_refused(self):
+        sub_id = self._sub()
+        with pytest.raises(ValueError) as exc:
+            db.update_submission(sub_id, status="finished")
+        assert "finished" in str(exc.value)
+        assert db.get_submission(sub_id)["status"] == "recording"
+
+    def test_the_message_names_the_valid_ones(self):
+        sub_id = self._sub()
+        with pytest.raises(ValueError) as exc:
+            db.update_submission(sub_id, status="")
+        assert "complete" in str(exc.value)
+
+    def test_the_pipeline_statuses_and_the_constant_agree(self):
+        """The constant is the definition. If server.py grows a seventh status
+        without adding it here, this fails rather than the event does."""
+        import re
+        source = (Path(__file__).parent.parent / "server.py").read_text()
+        used = set(re.findall(r'status="([a-z]+)"', source))
+        assert used <= db.SUBMISSION_STATUSES, f"server.py writes {used - db.SUBMISSION_STATUSES}"

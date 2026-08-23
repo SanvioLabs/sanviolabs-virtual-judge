@@ -166,7 +166,8 @@ This binds to `0.0.0.0:8000` — share your local IP (e.g., `http://192.168.1.42
 | `npm run setup` | Install deps + create .env |
 | `npm run db:reset` | Wipe the database (fresh start) |
 | `npm run audio:clean` | Delete all recorded/generated audio |
-| `npm run reset` | Full reset (DB + audio) |
+| `npm run exports:clean` | Delete every export bundle |
+| `npm run reset` | Full reset: database, audio and exports |
 
 ## PRFAQs — what each team takes home
 
@@ -355,6 +356,10 @@ database refers to them by absolute path, so a backup is both directories or it
 is not a backup. Restoring `judge.db` alone gives you every score and every
 transcript, and every audio player in the UI pointing at a file that is not
 there.
+
+Every export writes a new dated folder under `exports/` holding full transcripts,
+PRFAQs and audio. Nothing removes them, so they accumulate one copy of the event
+per export. `npm run exports:clean` clears them once you have sent them on.
 
 `judge.db`, `audio_recordings/` and `exports/` are all gitignored, and they must
 stay that way. They hold recordings of real people pitching, their transcripts,

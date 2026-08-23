@@ -82,7 +82,8 @@ server trusts its caller completely** `[observed]`.
 | `POST /api/events/{id}/finalist` | JSON | at least three completed submissions | 400 under three, 502 when the model names a team that did not pitch `[observed]` |
 | `GET /api/events/{id}/finalist/latest` | JSON | id | null when never run `[observed]` |
 | `GET /api/events/{id}/export/{csv,json,bundle}` | file, file, filesystem write | id | 404 `[observed]` |
-| `/static/*`, `/audio/*` | static mounts | path under the mounted directory | **every recording in `audio_recordings/` is served to any caller who knows or guesses a submission id** `[observed]` |
+| `/static/*` | static mount | path under `static/` | 404 `[observed]` |
+| `GET /audio/{filename}` | audio file | only the four names the system writes, and only for a record that still exists | 404 for anything else, including a file no submission refers to. **Still unauthenticated: a caller who knows a submission id gets that team's pitch** `[observed]` |
 
 ### Request and response shapes
 
@@ -182,7 +183,7 @@ These are the requirements a rewrite loses. None is written down anywhere else.
 
 | Invariant | Depended on by | What breaks |
 |---|---|---|
-| **One score row per category per submission.** `scores` has no uniqueness on `(submission_id, category)` and `save_scores` inserts unconditionally | the UI's score grid, the CSV column mapping, the export | Judging a submission twice produces two rows per category. **Reproduced: 8 rows for a 4-category rubric, and the UI renders all 8.** The overall score survives because numerator and denominator double together `[observed]` |
+| **One score row per category per submission.** `scores` still has no uniqueness on `(submission_id, category)`; `save_scores` clears the submission's rows before writing, which enforces it in code rather than in the schema | the UI's score grid, the CSV column mapping, the export | A second writer, or a direct insert, reintroduces duplicates. Until 2026-08-23 re-judging did exactly that: 8 rows for a 4-category rubric, all 8 rendered `[observed]` |
 | **A team name is unique within an event** | export filenames, the finalist round matching names back to teams | Nothing enforces it. Export filenames are now de-duplicated with a numeric suffix, but the finalist reconciliation refuses a duplicate name outright, so an event with two identically named teams cannot complete a finalist round `[observed]` |
 | **`submissions.status` follows recording → transcribing → scoring → speaking → complete, or error** | the UI's view of what is judged, `completed_count`, the finalist round's eligibility filter | No column constraint and no transition check. Any status can be written at any time `[observed]` |
 | **A rubric's categories do not change after submissions are scored against it** | the CSV's fixed column set, the leaderboard, `_overall_score` | Rubrics sync by name, so editing a rubric file creates a second rubric rather than mutating the first. The first is never re-pointed `[observed]` |
@@ -239,11 +240,18 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R34 | A submission's status is one of the six the system defines. Which transitions between them are legal is undecided | observed | `db.SUBMISSION_STATUSES` | `TestStatusIsOneOfOurs` |
+| R33 | Audio is served only under the four names the system writes, and only for a submission or event that still exists. Nothing else in `audio_recordings/` is reachable | observed | `api_audio` | `TestAudioIsServedOnlyForRecordsThatExist` |
+| R32 | A rubric's `judge_persona` sets tone, emphasis and what the judge values. The **shape** of the spoken review, its length, how many improvements it names and how it closes, is fixed by the product prompt and is not a rubric's to set | observed | `judge/llm.py`, `rubrics/example-hackathon.yaml` | `TestTheRubricDoesNotFightThePrompt` |
+| R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Twenty-nine of thirty are observed and one rests only on the README.
-Twenty-nine carry a test. The one without, R19, is a process instruction to the
-operator rather than a behaviour of the system, so no test can hold it.
+Thirty-three of thirty-four are observed and one rests only on the README.
+Thirty-three carry a test. The one without, R19, is a process instruction to
+the operator rather than a behaviour of the system, so no test can hold it.
+
+R31 through R34 were findings on the first pass rather than requirements. Each
+was specified here, given a failing test, and then implemented, in that order.
 
 R30 was `[intended: README]` on the first pass and is now `[observed]`, because
 writing its test showed the README's claim was wrong: it told operators that
@@ -285,16 +293,16 @@ pipeline, the PRFAQ generator, and the export builders.
 ## 10. Known defects and unowned behavior
 
 Findings, not requirements. Nobody should preserve these by reading this
-document.
+document. Four of the six recorded on the first pass have since been specified
+and closed, and are now requirements R31 through R34 rather than defects. What
+follows is what is left.
 
 | Finding | Evidence | Grade |
 |---|---|---|
-| **Re-judging a submission duplicates its scores.** Nothing guards `/judge` against a second run and `save_scores` inserts unconditionally | reproduced: 8 rows for a 4-category rubric, all 8 rendered | observed, candidate defect |
-| **The rubric and the scoring prompt give the judge contradictory instructions.** The shipped rubric's persona says "always close with three specific next steps"; the scoring prompt asks for one improvement and to close on the score, in 150 to 170 words. Both reach the model in the same system prompt | `rubrics/example-hackathon.yaml:30` against `judge/llm.py:59,67,69` | **contradiction** |
-| **Every recording is served to anyone who can reach the port.** `/audio` is a static mount over the whole directory, and there is no authentication | `server.py:92` | observed |
-| **`exports/` is never cleaned.** Bundles accumulate, each carrying full transcripts and audio | `api_export_bundle` | observed |
-| **`api_list_event_submissions` issues three queries per submission.** Harmless at hackathon scale, unbounded in principle | `server.py` | observed |
-| **A submission whose status is written directly can bypass the pipeline.** No transition check exists | `db.update_submission` | inferred |
+| **A recording is still served to anyone who can reach the port**, now only for a submission that exists. The directory-wide exposure is gone; the missing authentication is not, and is Q1 | `api_audio` | observed |
+| **`exports/` still accumulates.** Nothing expires it; `npm run exports:clean` removes them by hand and the README says so. Whether the product should own that lifecycle is Q14 | `api_export_bundle` | observed |
+| **`api_list_event_submissions` issues three queries per submission.** Measured against the largest real event, 15 teams and 46 queries, at 85ms. It is called on a tab switch and not on the live judging path. Left alone deliberately: no requirement constrains it, and grouping the queries would be code no test justifies | measured 2026-08-23 | observed |
+| **The order of statuses is still unchecked.** The value is now constrained to the six the system defines, but nothing stops `complete` being written before a transcript exists. The legal transitions are Q3's territory | `db.update_submission` | observed |
 
 ---
 

@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -89,7 +89,9 @@ app = FastAPI(title="Virtual Judge", version="0.2.0", lifespan=lifespan)
 
 # Serve static files (frontend)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
-app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
+# Audio is served by the route below rather than mounted. A mount publishes the
+# whole directory, so anything that lands in it is reachable, including files no
+# submission refers to and recordings whose submission has since been deleted.
 
 
 # --- Models ---
@@ -249,6 +251,48 @@ def _key_present(name: str) -> bool:
     if not value:
         return False
     return "..." not in value and not value.lower().startswith("your")
+
+
+# The four names this system writes into AUDIO_DIR. Anything else in that
+# directory is not ours and is not served.
+_PITCH = re.compile(r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(webm|mp3)$")
+_REVIEW = re.compile(r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_review\.mp3$")
+_FINALIST = re.compile(r"^finalist_([0-9a-f]{8})\.mp3$")
+
+_MEDIA_TYPES = {".mp3": "audio/mpeg", ".webm": "audio/webm"}
+
+
+@app.get("/audio/{filename}")
+async def api_audio(filename: str):
+    """Serve one recording, for a record that exists.
+
+    This replaced a static mount over the whole directory. The mount served any
+    file that happened to be there to anyone who could reach the port, whether
+    or not a submission referred to it, and kept serving a team's pitch after
+    their submission was deleted if the file survived.
+
+    It does not add authentication. That question is still open, and the answer
+    to it does not change the fact that the surface should be the files this
+    system writes and no others.
+    """
+    if (m := _REVIEW.match(filename)) or (m := _PITCH.match(filename)):
+        if not db.get_submission(m.group(1)):
+            raise HTTPException(status_code=404, detail="Not found")
+    elif m := _FINALIST.match(filename):
+        prefix = m.group(1)
+        if not any(e["id"].startswith(prefix) for e in db.list_events()):
+            raise HTTPException(status_code=404, detail="Not found")
+    else:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    path = AUDIO_DIR / filename
+    # The patterns above admit no separator, so this cannot leave AUDIO_DIR.
+    # Resolved and checked anyway, because that is one line and the alternative
+    # is trusting a regex to stay correct through its next edit.
+    if not path.is_file() or path.resolve().parent != AUDIO_DIR.resolve():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return FileResponse(path, media_type=_MEDIA_TYPES.get(path.suffix, "application/octet-stream"))
 
 
 @app.get("/api/health")

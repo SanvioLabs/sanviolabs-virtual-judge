@@ -299,6 +299,13 @@ def list_events() -> list[dict]:
         return [dict(r) for r in rows]
 
 
+# The statuses a submission moves through. This constrains the value, not the
+# order: which transitions are legal is undecided and recorded as a question,
+# but nothing should be able to write a status the system never defined.
+SUBMISSION_STATUSES = frozenset({
+    "recording", "transcribing", "scoring", "speaking", "complete", "error",
+})
+
 EVENT_COLUMNS = frozenset({"name", "description", "rubric_id", "status"})
 SUBMISSION_COLUMNS = frozenset({
     "team_name", "event_id", "rubric_id", "audio_path", "transcript", "status",
@@ -472,6 +479,11 @@ def submission_counts_by_event() -> dict[str, dict]:
 def update_submission(sub_id: str, **kwargs):
     """Update submission fields."""
     _assert_columns(kwargs, SUBMISSION_COLUMNS, "submissions")
+    if "status" in kwargs and kwargs["status"] not in SUBMISSION_STATUSES:
+        raise ValueError(
+            f"Not a submission status: {kwargs['status']!r}. "
+            f"One of {', '.join(sorted(SUBMISSION_STATUSES))}"
+        )
     with connection() as conn:
         for key, value in kwargs.items():
             conn.execute(f"UPDATE submissions SET {key} = ? WHERE id = ?", (value, sub_id))
@@ -500,8 +512,20 @@ def list_submissions(event_id: str | None = None, rubric_id: str | None = None) 
     # --- Scores ---
 
 def save_scores(submission_id: str, scores: list[dict]):
-    """Save category scores for a submission."""
+    """Save category scores for a submission, replacing any it already has.
+
+    Reviews and PRFAQs are unique on submission and replace on a second write.
+    Scores were the only one of the three left as a plain insert, so re-judging
+    a team appended a second set rather than superseding the first, and the UI
+    rendered both. The overall score survived it, because numerator and
+    denominator doubled together, which is why nobody noticed.
+
+    Enforced here rather than with a unique index, because a re-run may return a
+    different set of categories than the one before it and the old rows have to
+    go whether or not the new ones collide with them.
+    """
     with connection() as conn:
+        conn.execute("DELETE FROM scores WHERE submission_id = ?", (submission_id,))
         for s in scores:
             conn.execute(
                 "INSERT INTO scores (id, submission_id, category, score, rationale, created_at) VALUES (?, ?, ?, ?, ?, ?)",

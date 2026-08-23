@@ -1004,3 +1004,63 @@ class TestJudgingDoesNotBlockTheServer:
         )
 
         assert (await judging).status_code == 200
+
+
+class TestAudioIsServedOnlyForRecordsThatExist:
+    """SPEC.md R33.
+
+    /audio was a static mount over the whole directory, so any file that landed
+    there was reachable by anyone who could reach the port, whether or not a
+    submission referred to it, and a team's pitch stayed served after their
+    submission was deleted if the file outlived the row.
+
+    This adds no authentication. That question is still open.
+    """
+
+    async def _submission_with_audio(self, client):
+        sub = await _create_submission(client, "Audible")
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio bytes", "audio/webm")},
+        )
+        return sub
+
+    async def test_a_real_recording_is_served(self, client):
+        sub = await self._submission_with_audio(client)
+        res = await client.get(f"/audio/{sub['id']}.webm")
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("audio/webm")
+
+    async def test_a_file_no_submission_refers_to_is_not_served(self, client):
+        # The kind of thing that ends up in that directory: a sample, a stray
+        # download, a recording whose row was deleted.
+        stray = server.AUDIO_DIR / "sample_pitch_something.mp3"
+        stray.write_bytes(b"not ours")
+        try:
+            assert (await client.get("/audio/sample_pitch_something.mp3")).status_code == 404
+        finally:
+            stray.unlink(missing_ok=True)
+
+    async def test_a_recording_whose_submission_was_deleted_is_not_served(self, client):
+        sub = await self._submission_with_audio(client)
+        path = server.AUDIO_DIR / f"{sub['id']}.webm"
+        await client.delete(f"/api/submissions/{sub['id']}")
+        # Put the file back, as a half-finished delete or a restore would.
+        path.write_bytes(b"audio bytes")
+        try:
+            assert (await client.get(f"/audio/{sub['id']}.webm")).status_code == 404
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def test_an_unknown_submission_id_is_404(self, client):
+        assert (await client.get("/audio/11111111-2222-3333-4444-555555555555.webm")).status_code == 404
+
+    async def test_a_name_that_is_not_one_of_ours_is_404(self, client):
+        for name in ("judge.db", "server.py", "anything.txt", "..%2Fserver.py"):
+            assert (await client.get(f"/audio/{name}")).status_code == 404, name
+
+    async def test_traversal_is_refused(self, client):
+        for name in ("../server.py", "..%2F..%2Fetc%2Fpasswd", "%2e%2e%2fserver.py"):
+            res = await client.get(f"/audio/{name}")
+            assert res.status_code in (404, 307, 404), name
+            assert b"FastAPI" not in res.content
