@@ -731,6 +731,38 @@
         }
 
         // --- Recording ---
+        // Safari does not record audio/webm, which was hardcoded, so recording
+        // failed outright there. Ask the browser what it can actually produce.
+        function recorderOptions() {
+            const preferred = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/mp4',
+                'audio/ogg;codecs=opus',
+            ];
+            for (const mimeType of preferred) {
+                if (window.MediaRecorder && MediaRecorder.isTypeSupported(mimeType)) {
+                    return { mimeType };
+                }
+            }
+            return {};  // Let the browser pick rather than refusing to record.
+        }
+
+        // Server errors come back as {detail}, but a 500 from the stack above
+        // the app is plain text. Read either without throwing.
+        async function errorText(res) {
+            try {
+                const body = await res.json();
+                return body.detail || JSON.stringify(body);
+            } catch {
+                try {
+                    return (await res.text()) || `HTTP ${res.status}`;
+                } catch {
+                    return `HTTP ${res.status}`;
+                }
+            }
+        }
+
         async function startRecording() {
             const teamName = document.getElementById('team-name').value.trim();
             if (!teamName) {
@@ -748,12 +780,32 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ team_name: teamName, event_id: currentEventId }),
             });
+            if (!res.ok) {
+                // Most likely the event was deleted in another tab. Proceeding
+                // would record against an id the server does not have.
+                showStatus(`Could not start: ${esc(await errorText(res))}`, 'error');
+                return;
+            }
             const sub = await res.json();
             currentSubmissionId = sub.id;
 
-            // Start recording
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            // Getting the microphone is the step that fails in a real room:
+            // permission denied, no input device, or a browser that will not
+            // record the format we asked for. Each used to throw into nothing,
+            // leaving the button hidden, no message, and a team waiting.
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, recorderOptions());
+            } catch (err) {
+                if (stream) stream.getTracks().forEach(t => t.stop());
+                // Roll back the row we just created so a failed start does not
+                // leave an empty team sitting in the submissions list.
+                await fetch(`/api/submissions/${currentSubmissionId}`, { method: 'DELETE' }).catch(() => {});
+                currentSubmissionId = null;
+                showStatus(`Microphone unavailable: ${esc(err.message || err.name)}`, 'error');
+                return;
+            }
             audioChunks = [];
 
             mediaRecorder.ondataavailable = (e) => {
@@ -788,9 +840,22 @@
             document.getElementById('team-name').disabled = true;
         }
 
+        // Put the UI back so the operator can try again rather than reloading
+        // with a team standing at the mic.
+        function resetToReady() {
+            document.getElementById('btn-stop').classList.add('hidden');
+            document.getElementById('btn-start').classList.remove('hidden');
+            document.getElementById('recording-indicator').classList.remove('active');
+            document.getElementById('team-name').disabled = false;
+        }
+
         async function stopRecording() {
             if (!mediaRecorder) return;
 
+            // Assigned before stop(), not after. The event fires as a result of
+            // that call, and installing the handler afterwards is a race that
+            // only holds because browsers happen to dispatch it asynchronously.
+            mediaRecorder.onstop = handleRecordingStopped;
             mediaRecorder.stop();
             clearInterval(timerInterval);
 
@@ -801,47 +866,56 @@
             }
             document.getElementById('waveform-canvas').style.display = 'none';
 
-            mediaRecorder.onstop = async () => {
-                // Stop all tracks
-                mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        }
 
-                document.getElementById('btn-stop').classList.add('hidden');
-                document.getElementById('recording-indicator').classList.remove('active');
+        async function handleRecordingStopped() {
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            document.getElementById('btn-stop').classList.add('hidden');
+            document.getElementById('recording-indicator').classList.remove('active');
 
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            // The whole tail is wrapped. Anything thrown here used to become an
+            // unhandled rejection, leaving "Uploading audio..." on screen with
+            // no way forward except reloading the page.
+            try {
+                const blobType = mediaRecorder.mimeType || 'audio/webm';
+                const audioBlob = new Blob(audioChunks, { type: blobType });
+                if (audioBlob.size === 0) {
+                    showStatus('Nothing was recorded. Check the microphone and try again.', 'error');
+                    resetToReady();
+                    return;
+                }
+
                 showStatus('Uploading audio...', 'info');
-
-                // Upload
                 const formData = new FormData();
                 formData.append('file', audioBlob, 'recording.webm');
-                await fetch(`/api/submissions/${currentSubmissionId}/audio`, {
+                const upload = await fetch(`/api/submissions/${currentSubmissionId}/audio`, {
                     method: 'POST',
                     body: formData,
                 });
+                // This response was never checked. A rejected upload fell
+                // through to judging, which then reported "No audio uploaded
+                // yet" and hid the real reason.
+                if (!upload.ok) {
+                    showStatus(`Upload failed: ${esc(await errorText(upload))}`, 'error');
+                    resetToReady();
+                    return;
+                }
 
-                // Judge
                 showStatus('<i data-lucide="cpu" style="width:16px;height:16px;display:inline;vertical-align:middle;margin-right:0.4rem;"></i> Transcribing & judging... this takes ~30 seconds.', 'info');
                 const res = await fetch(`/api/submissions/${currentSubmissionId}/judge`, {
                     method: 'POST',
                 });
-
                 if (!res.ok) {
-                    let errMsg = 'Unknown error';
-                    try {
-                        const err = await res.json();
-                        errMsg = err.detail || JSON.stringify(err);
-                    } catch {
-                        errMsg = await res.text();
-                    }
-                    showStatus(`Error: ${esc(errMsg)}`, 'error');
-                    document.getElementById('btn-start').classList.remove('hidden');
-                    document.getElementById('team-name').disabled = false;
+                    showStatus(`Error: ${esc(await errorText(res))}`, 'error');
+                    resetToReady();
                     return;
                 }
 
-                const result = await res.json();
-                showResults(result);
-            };
+                showResults(await res.json());
+            } catch (err) {
+                showStatus(`Something went wrong: ${esc(err.message || err)}`, 'error');
+                resetToReady();
+            }
         }
 
         function updateTimer() {

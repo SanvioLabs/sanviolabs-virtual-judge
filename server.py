@@ -704,6 +704,41 @@ async def api_generate_event_prfaqs(event_id: str, force: bool = False):
 
 # --- Finalist ---
 
+def _reconcile_top_picks(top_picks: list[dict], completed: list[dict]) -> list[dict]:
+    """Check the podium against the teams that actually pitched.
+
+    The finalist round asks a model to compare teams and hand back names as
+    free text. Nothing downstream checked them, so a misspelling or an invented
+    team went straight into the spoken announcement, the leaderboard and the
+    export. This is the highest-stakes output the tool produces and it is read
+    to a room, so the two failures are handled differently.
+
+    A name that matches a real team once case and spacing are folded is
+    rewritten to the registered spelling, silently, because that is formatting.
+    A name matching no team at all, or the same team appearing twice, means the
+    comparison is not trustworthy and the caller is told rather than the room.
+    """
+    by_norm = {_norm_category(s["team_name"]): s["team_name"] for s in completed}
+
+    reconciled: list[dict] = []
+    seen: set[str] = set()
+    for pick in top_picks:
+        real = by_norm.get(_norm_category(pick.get("team_name")))
+        if real is None:
+            raise ValueError(
+                f"The finalist round named a team that did not pitch: "
+                f"{pick.get('team_name')!r}. Run it again."
+            )
+        if real in seen:
+            raise ValueError(
+                f"The finalist round placed {real!r} twice. Run it again."
+            )
+        seen.add(real)
+        reconciled.append({**pick, "team_name": real})
+
+    return reconciled
+
+
 @app.post("/api/events/{event_id}/finalist")
 async def api_run_finalist(event_id: str):
     """Run the finalist round for an event — compare all submissions and pick top 3."""
@@ -735,6 +770,12 @@ async def api_run_finalist(event_id: str):
 
     # Run finalist LLM
     result = await asyncio.to_thread(run_finalist_round, sub_data, rubric)
+
+    # Never announce a team that did not pitch.
+    try:
+        result["top_picks"] = _reconcile_top_picks(result.get("top_picks") or [], completed)
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
     # Generate spoken announcement
     announce_text = _format_finalist_for_speech(result)

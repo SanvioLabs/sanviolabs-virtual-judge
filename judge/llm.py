@@ -1,5 +1,7 @@
 """LLM-powered judge — scores transcripts against rubrics via OpenRouter."""
 
+import os
+
 from .openrouter import RETRYABLE, complete_json, get_client, scoring_model
 from .retry import retry
 
@@ -8,6 +10,18 @@ from .retry import retry
 # same ceiling and is several times larger than the answer. Budget for the
 # thinking, not for the document.
 MAX_TOKENS = 8000
+
+# How much of each pitch the finalist round gets to read.
+#
+# This was 500 characters. A real transcript from a five minute pitch runs
+# about 4,700, so the round that picks the winner was comparing the opening
+# thirty seconds of each team and their category scores. The scores already
+# encode the whole pitch; the transcript is there so the comparison can see
+# what the numbers missed, which it cannot do from the introduction.
+#
+# Twenty teams at this length is roughly 30k tokens of input, which is
+# comfortable. Lower it if you are pointing the round at a small-context model.
+FINALIST_TRANSCRIPT_CHARS = int(os.environ.get("VJ_FINALIST_TRANSCRIPT_CHARS", "6000"))
 
 
 def _get_client():
@@ -99,10 +113,16 @@ def run_finalist_round(submissions: list[dict], rubric: dict) -> dict:
         scores_summary = ", ".join(
             f"{s['category']}: {s['score']}/{rubric['scale_max']}" for s in sub["scores"]
         )
+        transcript = sub["transcript"] or ""
+        # Only say it is an excerpt when it actually is. The ellipsis used to be
+        # unconditional, which told the model a complete pitch was partial.
+        excerpt = transcript[:FINALIST_TRANSCRIPT_CHARS]
+        label = "Transcript excerpt" if len(transcript) > len(excerpt) else "Transcript"
+        tail = "..." if len(transcript) > len(excerpt) else ""
         submissions_text += f"""
 ### Team {i}: {sub['team_name']}
 Scores: {scores_summary} (Overall: {sub['overall_score']:.1f}/{rubric['scale_max']})
-Transcript excerpt: {sub['transcript'][:500]}...
+{label}: {excerpt}{tail}
 ---"""
 
     system_prompt = f"""{rubric.get('judge_persona', 'You are an expert judge.')}
