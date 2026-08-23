@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'emscripten'",
@@ -298,7 +298,7 @@ wheels = [
 
 [[package]]
 name = "elevenlabs"
-version = "1.56.0"
+version = "2.64.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -308,9 +308,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1a/ad/e65a5c854a9ee0759c6b19da8981c275253f4cfc1761394b4067bfed4792/elevenlabs-1.56.0.tar.gz", hash = "sha256:69f078844f1adeb5a9c154e0514575e34d9b57909129d9a94a4ef8d41673bcac", size = 174798, upload-time = "2025-04-02T09:11:50.195Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/f3/0931fc203e86797e46c132174990f6476141ee4593631b8b42d19b00817a/elevenlabs-2.64.0.tar.gz", hash = "sha256:97cab1d3b84019a08f0e52fa00c8ed38dae9276e4209745be929cb3f6d830426", size = 777749, upload-time = "2026-08-14T14:36:41.462Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/f0/f711ffe2fcc4fb8405889ca81a478c54ddaa290ca39d74823c8042eacf3f/elevenlabs-1.56.0-py3-none-any.whl", hash = "sha256:8aaa6be6186318cc95abf63ba8806d991f13cf698b28305e54fb51673d791ed5", size = 413655, upload-time = "2025-04-02T09:11:48.495Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/c7/f70ff6b05fd040238500894d4092c8416a7049f1dd2a6b1843a5b8c972fe/elevenlabs-2.64.0-py3-none-any.whl", hash = "sha256:806bb8123f7b3d0559cb67537e819dacdc7a2df7cda8334a99627e6a92cf8f8a", size = 2062258, upload-time = "2026-08-14T14:36:39.501Z" },
 ]
 
 [[package]]
@@ -459,8 +459,8 @@ name = "httpcore2"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
+    { name = "h11", marker = "python_full_version < '3.12' or sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "python_full_version < '3.12' or sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/be/ad/f4f0e57345f1870f3e8cb624e058d7eca6e5a27d33bcc3311d9b618734cd/httpcore2-2.12.0.tar.gz", hash = "sha256:9293522bba0aa7c4c8e9e3f040c16575bd8868e155a77fa30c7a9085a5eae648", size = 67548, upload-time = "2026-08-18T13:22:08.211Z" }
 wheels = [
@@ -1021,11 +1021,11 @@ wheels = [
 
 [[package]]
 name = "python-multipart"
-version = "0.0.20"
+version = "0.0.32"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f3/87/f44d7c9f274c7ee665a29b885ec97089ec5dc034c7f3fafa03da9e39a09e/python_multipart-0.0.20.tar.gz", hash = "sha256:8dd0cab45b8e23064ae09147625994d090fa46f5b0d1e13af944c331a7fa9d13", size = 37158, upload-time = "2024-12-16T19:45:46.972Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/42/55c32bb9b12693c092ad250a0e82edb5b31ddeda6eb772de5f308b3804ad/python_multipart-0.0.32.tar.gz", hash = "sha256:be54b7f3fa167bb83e4fcd936b887b708f4e57fe75911c02aebf53efaf8d938e", size = 46881, upload-time = "2026-06-04T16:18:58.647Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/58/38b5afbc1a800eeea951b9285d3912613f2603bdf897a4ab0f4bd7f405fc/python_multipart-0.0.20-py3-none-any.whl", hash = "sha256:8a62d3a8335e06589fe01f2a3e178cdcc632f3fbe0d492ad9ee0ec35aab1f104", size = 24546, upload-time = "2024-12-16T19:45:44.423Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/04/e8135ebd1ad02c56ec633277529b2602ff99ff634be76cdba5744cf554fd/python_multipart-0.0.32-py3-none-any.whl", hash = "sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23", size = 30042, upload-time = "2026-06-04T16:18:57.319Z" },
 ]
 
 [[package]]
@@ -1234,10 +1234,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "edge-tts", marker = "extra == 'demo'", specifier = ">=7.2.8" },
-    { name = "elevenlabs", specifier = "==1.56.0" },
+    { name = "elevenlabs", specifier = "==2.64.0" },
     { name = "fastapi", specifier = "==0.115.12" },
     { name = "openai", specifier = "==3.3.1" },
-    { name = "python-multipart", specifier = "==0.0.20" },
+    { name = "python-multipart", specifier = "==0.0.32" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "uvicorn", specifier = "==0.34.2" },
 ]
