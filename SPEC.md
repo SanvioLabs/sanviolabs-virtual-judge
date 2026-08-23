@@ -289,6 +289,7 @@ overnight or unattended run has no way to report anything.
 | Readiness | `GET /api/health?verify=1` makes a live billed call to each provider and reports per-provider `ok` with a detail string. Without `verify=1` it reports only whether keys are present, which says nothing about whether they work | observed |
 | Failure visibility | Each pipeline stage sets `submissions.status` to `error` and returns a 500 naming the stage. The browser prints it and re-enables recording | observed |
 | Retry | Three attempts with exponential backoff on transient provider failures, on transcription, scoring, speech and PRFAQ generation | observed |
+| Dependency upgrades | The whole suite runs under `MOCK_EXTERNALS=true`, so it passes whether or not the providers still work. A bump to `openai` or `elevenlabs` is cleared by exercising score, transcribe and speak against the real services once with synthetic input, not by green CI | observed |
 | Logging | `logging` at warning and error only, unconfigured, so it inherits uvicorn's handler | observed |
 | Backup | `judge.db` plus `audio_recordings/`. The database refers to recordings by **absolute path**, so a restore into a different directory or onto a different machine breaks every audio reference even when the files were copied | observed |
 | Reset | `npm run db:reset`, `npm run audio:clean`, `npm run reset` | observed |
