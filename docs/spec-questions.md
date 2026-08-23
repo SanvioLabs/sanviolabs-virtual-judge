@@ -22,7 +22,7 @@ reading the code will never tell you which.
 Ordered by what the answer changes, not by where it was found. The first four
 are a call agenda. The rest is the backlog.
 
-**Where this stands.** Six of the seventeen are closed and one is half closed, because the answer turned out to be already in the design rather than
+**Where this stands.** Eight of the seventeen are closed and two are half closed, because the answer turned out to be already in the design rather than
 in someone's head. Those are marked. The rest split into two kinds, and the
 difference matters:
 
@@ -204,10 +204,10 @@ Q16. What should happen when a provider is down mid-event?
    Ask:      Pat
 
 Q17. How many teams is one event expected to hold?
-   Found:    nothing bounds it
-   Behaviour: Untested above a handful. The finalist prompt sends every team's
-             scores and up to 6,000 characters of each transcript in a single
-             request, so input grows linearly with team count `[observed]`
-   Depends:  Whether the finalist round needs to page or summarise above some
-             size, and what the README should tell an organiser to expect
-   Ask:      Pat
+   Status:   **Closed by measurement.** R41. The finalist prompt is about 4k
+             tokens at 3 teams, 24k at 20, 49k at 40 and 97k at 80, against
+             full five minute transcripts. It grows linearly and is not the
+             constraint. What bounds an event is the thirty seconds of live
+             judging per team, which is a property of the room
+   Remains:  Nothing. It needed a measurement, not a decision
+   Ask:      Nobody

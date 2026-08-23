@@ -120,3 +120,51 @@ class TestTheFinalistRoundReadsThePitch:
     def test_a_missing_transcript_does_not_crash(self, monkeypatch):
         prompt = self._prompt_for(None, monkeypatch)
         assert "Team 1: A" in prompt
+
+
+class TestTheFinalistRoundScalesWithTheRoom:
+    """SPEC.md R41.
+
+    The round sends every team's scores and up to FINALIST_TRANSCRIPT_CHARS of
+    each transcript in one request, so its input grows linearly with team count.
+    Nothing had ever measured where that stops working, so "how many teams can
+    one event hold" was an open question with no evidence either way.
+
+    Measured 2026-08-23 against full five minute transcripts: about 4k tokens at
+    3 teams, 24k at 20, 49k at 40 and 97k at 80. It is not the constraint. The
+    constraint on an event is the thirty seconds of live judging per team.
+    """
+
+    def _prompt_chars(self, teams, monkeypatch):
+        captured = {}
+
+        def fake(client, model, messages, max_tokens, what="response", **kw):
+            captured["chars"] = sum(len(m["content"]) for m in messages)
+            return {"top_picks": [], "reasoning": ""}
+
+        monkeypatch.setattr(llm, "complete_json", fake)
+        transcript = "word " * 940  # about 4,700 characters, a real pitch
+        rubric = {"categories": [{"name": n} for n in ("A", "B", "C", "D")], "scale_max": 5}
+        subs = [{
+            "team_name": f"Team {i}", "transcript": transcript,
+            "scores": [{"category": c["name"], "score": 4} for c in rubric["categories"]],
+            "overall_score": 4.0,
+        } for i in range(teams)]
+        llm.run_finalist_round(subs, rubric)
+        return captured["chars"]
+
+    def test_it_grows_linearly_rather_than_worse(self, monkeypatch):
+        ten = self._prompt_chars(10, monkeypatch)
+        forty = self._prompt_chars(40, monkeypatch)
+        # Four times the teams, near enough four times the prompt, plus a fixed
+        # system prompt that does not grow.
+        assert 3.5 < forty / ten < 4.5
+
+    def test_forty_teams_fits_a_modern_context_comfortably(self, monkeypatch):
+        approx_tokens = self._prompt_chars(40, monkeypatch) / 4
+        assert approx_tokens < 100_000, f"{approx_tokens:,.0f} tokens at 40 teams"
+
+    def test_eighty_teams_still_fits(self, monkeypatch):
+        """Far past any hackathon this is built for, and still not the limit."""
+        approx_tokens = self._prompt_chars(80, monkeypatch) / 4
+        assert approx_tokens < 180_000, f"{approx_tokens:,.0f} tokens at 80 teams"
