@@ -1113,7 +1113,8 @@ class TestTheStatusSequence:
         )
         await client.post(f"/api/submissions/{sub['id']}/judge")
 
-        assert seen == ["transcribing", "transcribing", "scoring", "speaking", "complete"]
+        # `recorded` from the upload, then the pipeline proper.
+        assert seen == ["recorded", "transcribing", "scoring", "speaking", "complete"]
 
     @patch("server.speak")
     @patch("server.score_submission")
@@ -1216,3 +1217,143 @@ class TestTeamNamesAreUniqueWithinAnEvent:
         again = await client.post("/api/submissions",
                                   json={"team_name": "Recycled", "event_id": event_id})
         assert again.status_code == 200
+
+
+class TestRecordNowJudgeLater:
+    """SPEC.md R44 and R45.
+
+    A provider outage is the only failure in this system that can cost a whole
+    event rather than one team. The recording was always kept, but nothing
+    could act on that: a failed run left the submission at `error` with no way
+    to try again, and the UI's only path to judging was the moment after Stop.
+
+    Uploading also claimed `transcribing` while nothing was transcribing, so a
+    recorded-but-unjudged team was indistinguishable from one mid-pipeline.
+    """
+
+    async def _recorded(self, client, team="Recorded"):
+        sub = await _create_submission(client, team)
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio bytes", "audio/webm")},
+        )
+        return sub
+
+    async def test_uploading_leaves_it_recorded_not_transcribing(self, client):
+        sub = await self._recorded(client)
+        assert (await client.get(f"/api/submissions/{sub['id']}")).json()["status"] == "recorded"
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_a_recording_can_be_judged_later(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        mock_transcribe.return_value = "a pitch"
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}], "summary": "s"}
+        mock_speak.return_value = Path("/tmp/f.mp3")
+
+        sub = await self._recorded(client, "Deferred")
+        # Some time passes. The provider comes back.
+        res = await client.post(f"/api/submissions/{sub['id']}/judge")
+        assert res.status_code == 200
+        assert (await client.get(f"/api/submissions/{sub['id']}")).json()["status"] == "complete"
+
+    @patch("server.transcribe_audio")
+    async def test_a_failed_run_keeps_the_recording(self, mock_transcribe, client):
+        mock_transcribe.side_effect = RuntimeError("provider is down")
+        sub = await self._recorded(client, "Outage")
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+
+        state = (await client.get(f"/api/submissions/{sub['id']}")).json()
+        assert state["status"] == "error"
+        assert state["audio_path"], "the recording was lost, which is the whole point"
+        assert (server.AUDIO_DIR / f"{sub['id']}.webm").is_file()
+
+    async def test_pending_lists_what_still_needs_judging(self, client):
+        event_id = await _get_event_id(client)
+        await self._recorded(client, "Waiting One")
+        await self._recorded(client, "Waiting Two")
+        res = await client.get(f"/api/events/{event_id}/pending")
+        assert res.status_code == 200
+        names = {s["team_name"] for s in res.json()}
+        assert {"Waiting One", "Waiting Two"} <= names
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_pending_excludes_what_is_already_judged(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        mock_transcribe.return_value = "a pitch"
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}], "summary": "s"}
+        mock_speak.return_value = Path("/tmp/f.mp3")
+
+        event_id = await _get_event_id(client)
+        done = await self._recorded(client, "Finished")
+        await client.post(f"/api/submissions/{done['id']}/judge")
+        await self._recorded(client, "Still Waiting")
+
+        names = {s["team_name"] for s in (await client.get(f"/api/events/{event_id}/pending")).json()}
+        assert "Still Waiting" in names
+        assert "Finished" not in names
+
+    async def test_pending_includes_a_failed_run(self, client):
+        """An outage leaves teams at error, and those are exactly the ones to
+        come back to."""
+        event_id = await _get_event_id(client)
+        sub = await self._recorded(client, "Failed Earlier")
+        server.db.update_submission(sub["id"], status="error")
+        names = {s["team_name"] for s in (await client.get(f"/api/events/{event_id}/pending")).json()}
+        assert "Failed Earlier" in names
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_judging_every_pending_team_reports_each_outcome(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        mock_transcribe.return_value = "a pitch"
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}], "summary": "s"}
+        mock_speak.return_value = Path("/tmp/f.mp3")
+
+        event_id = await _get_event_id(client)
+        await self._recorded(client, "Backlog One")
+        await self._recorded(client, "Backlog Two")
+
+        res = await client.post(f"/api/events/{event_id}/judge-pending")
+        assert res.status_code == 200
+        body = res.json()
+        assert set(body["judged"]) == {"Backlog One", "Backlog Two"}
+        assert body["failed"] == []
+        assert (await client.get(f"/api/events/{event_id}/pending")).json() == []
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_one_failure_does_not_stop_the_rest(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        mock_speak.return_value = Path("/tmp/f.mp3")
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}], "summary": "s"}
+        calls = {"n": 0}
+
+        def flaky(_path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("still down")
+            return "a pitch"
+
+        mock_transcribe.side_effect = flaky
+        event_id = await _get_event_id(client)
+        await self._recorded(client, "Unlucky")
+        await self._recorded(client, "Lucky")
+
+        body = (await client.post(f"/api/events/{event_id}/judge-pending")).json()
+        assert len(body["judged"]) == 1
+        assert len(body["failed"]) == 1
+        assert body["failed"][0]["reason"]

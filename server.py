@@ -527,13 +527,24 @@ async def api_upload_audio(sub_id: str, file: UploadFile):
         audio_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Uploaded recording is empty")
 
-    db.update_submission(sub_id, audio_path=str(audio_path), status="transcribing")
+    # `recorded`, not `transcribing`. Nothing is transcribing until /judge is
+    # called, and a team waiting to be judged after an outage was previously
+    # indistinguishable from one halfway through the pipeline.
+    db.update_submission(sub_id, audio_path=str(audio_path), status="recorded")
     return {"status": "uploaded", "audio_path": str(audio_path)}
 
 
 @app.post("/api/submissions/{sub_id}/judge")
 async def api_judge_submission(sub_id: str):
+    """Judge one submission now."""
+    return await _judge_submission(sub_id)
+
+
+async def _judge_submission(sub_id: str) -> dict:
     """Run the full judging pipeline: transcribe → score → generate review audio.
+
+    Separate from the route so the backlog runner can call it too. Both want
+    the same errors, so it raises HTTPException rather than returning a status.
 
     Every external step runs on a worker thread. They are synchronous, they take
     roughly thirty seconds together, and retry backoff can stretch that into
@@ -624,6 +635,55 @@ async def api_judge_submission(sub_id: str):
         "review_audio": f"/audio/{sub_id}_review.mp3",
         **({"unmatched_categories": unmatched_categories} if unmatched_categories else {}),
     }
+
+
+PENDING_STATUSES = frozenset({"recorded", "error"})
+
+
+def _pending(event_id: str) -> list[dict]:
+    """Submissions holding a recording that has not produced a review.
+
+    `recorded` is a team judging has not been attempted for. `error` is one it
+    failed for, which after a provider outage is most of the room. Both are
+    work to come back to, and neither loses its audio.
+    """
+    return [
+        s for s in db.list_submissions(event_id=event_id)
+        if s["audio_path"] and s["status"] in PENDING_STATUSES and not db.get_review(s["id"])
+    ]
+
+
+@app.get("/api/events/{event_id}/pending")
+async def api_list_pending(event_id: str):
+    """What still needs judging. The backlog an outage leaves behind."""
+    if not db.get_event(event_id):
+        raise HTTPException(status_code=404, detail="Event not found")
+    return _pending(event_id)
+
+
+@app.post("/api/events/{event_id}/judge-pending")
+async def api_judge_pending(event_id: str):
+    """Judge every recording that has not produced a review yet.
+
+    One at a time rather than in parallel: the reason this exists is that a
+    provider was struggling, and three concurrent requests into a service that
+    is already failing makes it worse. A team that fails does not stop the
+    rest, and the response names who succeeded and who did not.
+    """
+    if not db.get_event(event_id):
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    judged, failed = [], []
+    for sub in _pending(event_id):
+        try:
+            await _judge_submission(sub["id"])
+            judged.append(sub["team_name"])
+        except HTTPException as e:
+            failed.append({"team_name": sub["team_name"], "reason": e.detail})
+        except Exception as e:
+            failed.append({"team_name": sub["team_name"], "reason": str(e)})
+
+    return {"judged": judged, "failed": failed, "still_pending": len(_pending(event_id))}
 
 
 @app.get("/api/events/{event_id}/submissions")

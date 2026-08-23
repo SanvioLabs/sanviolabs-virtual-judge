@@ -125,6 +125,18 @@ The processing step counts elapsed time on screen. It is usually around thirty
 seconds. If a provider hangs, retries can push a single team into minutes, so
 the number on screen is the real one and the thirty is the typical one.
 
+### When a provider is down
+
+The only failure that can cost the whole event rather than one team. It cannot.
+
+Tick **Record only, judge later** and keep going: each pitch is captured and the
+room moves on at full speed. If judging fails mid-run instead, the recording is
+still saved and the message says so.
+
+Either way the Submissions tab shows how many recordings are waiting, with one
+**Judge all** button. It runs them one at a time rather than in parallel, since
+the reason you are here is that a provider was struggling.
+
 After all teams have gone:
 
 ```
@@ -356,6 +368,8 @@ virtual-judge/
 | `POST` | `/api/submissions` | Create a submission `{team_name, event_id}` |
 | `POST` | `/api/submissions/:id/audio` | Upload recorded audio (multipart) |
 | `POST` | `/api/submissions/:id/judge` | Run full pipeline (transcribe → score → speak) |
+| `GET` | `/api/events/:id/pending` | Recordings that have not produced a review yet |
+| `POST` | `/api/events/:id/judge-pending` | Judge every waiting recording, one at a time |
 | `GET` | `/api/events/:id/submissions` | List all submissions for an event |
 | `GET` | `/api/submissions/:id` | Get single submission detail |
 | `DELETE` | `/api/submissions/:id` | Delete one submission, its scores, review, PRFAQ and audio. For the recording started on the wrong team |

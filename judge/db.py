@@ -303,7 +303,7 @@ def list_events() -> list[dict]:
 # order: which transitions are legal is undecided and recorded as a question,
 # but nothing should be able to write a status the system never defined.
 SUBMISSION_STATUSES = frozenset({
-    "recording", "transcribing", "scoring", "speaking", "complete", "error",
+    "recording", "recorded", "transcribing", "scoring", "speaking", "complete", "error",
 })
 
 EVENT_COLUMNS = frozenset({"name", "description", "rubric_id", "status"})

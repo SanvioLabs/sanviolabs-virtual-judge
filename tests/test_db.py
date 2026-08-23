@@ -587,7 +587,8 @@ class TestStatusIsOneOfOurs:
         return db.create_submission("T", event_id, rubric_id)
 
     @pytest.mark.parametrize(
-        "status", ["recording", "transcribing", "scoring", "speaking", "complete", "error"]
+        "status",
+        ["recording", "recorded", "transcribing", "scoring", "speaking", "complete", "error"],
     )
     def test_every_status_the_pipeline_uses_is_accepted(self, status):
         sub_id = self._sub()

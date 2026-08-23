@@ -537,8 +537,14 @@
                     <input type="text" id="team-name" placeholder="Team name..." autocomplete="off">
                     <div class="btn-group">
                         <button class="btn btn-primary" id="btn-start" onclick="startRecording()"><i data-lucide="mic" style="width:16px;height:16px;"></i> Start Recording</button>
-                        <button class="btn btn-danger hidden" id="btn-stop" onclick="stopRecording()"><i data-lucide="square" style="width:16px;height:16px;"></i> Stop & Judge</button>
+                        <button class="btn btn-danger hidden" id="btn-stop" onclick="stopRecording()"><i data-lucide="square" style="width:16px;height:16px;"></i> Stop &amp; Judge</button>
                     </div>
+                    <!-- For a known outage: capture the pitch and judge it once the
+                         provider is back, rather than making the room wait. -->
+                    <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.75rem;color:#94a3b8;font-size:0.9rem;cursor:pointer;">
+                        <input type="checkbox" id="record-only" style="width:16px;height:16px;cursor:pointer;">
+                        Record only, judge later
+                    </label>
 
                     <div class="recording-indicator" id="recording-indicator">
                         <div class="pulse"></div>
@@ -573,6 +579,7 @@
 
             <!-- SUBMISSIONS VIEW -->
             <div id="view-submissions" class="view">
+                <div id="pending-banner" class="hidden" style="background:#1e293b;border:1px solid #f59e0b;border-radius:8px;padding:0.9rem 1.1rem;margin-bottom:1rem;color:#e2e8f0;"></div>
                 <div class="panel">
                     <h2>All Submissions</h2>
                     <div class="btn-group" style="margin-bottom: 1rem;">
@@ -937,14 +944,32 @@
                     return;
                 }
 
+                // A known outage: keep the pitch, skip the wait, judge it later
+                // from the Submissions tab.
+                if (document.getElementById('record-only').checked) {
+                    showStatus('Recorded. Judge it from the Submissions tab when the provider is back.', 'info');
+                    resetToReady();
+                    document.getElementById('team-name').value = '';
+                    await loadSubmissions();
+                    return;
+                }
+
                 startJudgingClock();
                 const res = await fetch(`/api/submissions/${currentSubmissionId}/judge`, {
                     method: 'POST',
                 });
                 stopJudgingClock();
                 if (!res.ok) {
-                    showStatus(`Error: ${esc(await errorText(res))}`, 'error');
+                    // The recording is on disk either way. Say so, because the
+                    // operator's next question is whether the pitch is lost.
+                    showStatus(
+                        `Judging failed: ${esc(await errorText(res))}<br>`
+                        + `<span style="color:#94a3b8;">The recording is saved. `
+                        + `Judge it from the Submissions tab when the provider is back.</span>`,
+                        'error',
+                    );
                     resetToReady();
+                    await loadSubmissions();
                     return;
                 }
 
@@ -1071,13 +1096,21 @@
                     ? `<span id="prfaq-controls-${s.id}" style="display:contents;">${prfaqControls(s.id, s.has_prfaq)}</span>`
                     : '';
 
+                // Recorded or failed, and never reviewed: judgeable now.
+                const needsJudging = s.audio_path && !s.review
+                    && (s.status === 'recorded' || s.status === 'error');
+                const judgeBtn = needsJudging
+                    ? `<button class="btn btn-primary" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="judgeOne('${esc(s.id)}', this)"><i data-lucide="gavel" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Judge</button>`
+                    : '';
+
                 // Someone will record the wrong team. This is the undo.
                 const deleteBtn = `<button class="btn btn-danger" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="deleteSubmission('${esc(s.id)}', ${esc(JSON.stringify(s.team_name))})"><i data-lucide="trash-2" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Delete</button>`;
 
-                const audioHtml = (pitchAudioSrc || reviewAudioSrc || prfaqBtn || deleteBtn)
+                const audioHtml = (pitchAudioSrc || reviewAudioSrc || prfaqBtn || deleteBtn || judgeBtn)
                     ? `<div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
                         ${pitchAudioSrc ? `<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="playAudio('${pitchAudioSrc}')"><i data-lucide="mic" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Pitch</button>` : ''}
                         ${reviewAudioSrc ? `<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="playAudio('${reviewAudioSrc}')"><i data-lucide="volume-2" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Review</button>` : ''}
+                        ${judgeBtn}
                         ${prfaqBtn}
                         ${deleteBtn}
                        </div>`
@@ -1103,6 +1136,7 @@
 
             // Render Lucide icons in dynamic content
             lucide.createIcons();
+            await refreshPending();
         }
 
         // --- PRFAQ ---
@@ -1417,6 +1451,60 @@
 
         function hideFinalistStatus() {
             document.getElementById('finalist-status').className = 'status';
+        }
+
+        // --- The backlog -----------------------------------------------------
+        // A provider outage leaves teams recorded and unjudged. This is how they
+        // get judged once it is back, without re-recording anybody.
+
+        async function refreshPending() {
+            const banner = document.getElementById('pending-banner');
+            if (!currentEventId) { banner.classList.add('hidden'); return; }
+            try {
+                const res = await fetch(`/api/events/${currentEventId}/pending`);
+                if (!res.ok) { banner.classList.add('hidden'); return; }
+                const pending = await res.json();
+                if (!pending.length) { banner.classList.add('hidden'); return; }
+                banner.innerHTML =
+                    `<strong>${pending.length}</strong> recording${pending.length === 1 ? '' : 's'} `
+                    + `waiting to be judged. `
+                    + `<button class="btn btn-primary" style="font-size:0.8rem;padding:0.3rem 0.7rem;margin-left:0.5rem;" onclick="judgeAllPending(this)">Judge all</button>`;
+                banner.classList.remove('hidden');
+                lucide.createIcons();
+            } catch {
+                banner.classList.add('hidden');
+            }
+        }
+
+        async function judgeOne(subId, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = 'Judging...'; }
+            try {
+                const res = await fetch(`/api/submissions/${subId}/judge`, { method: 'POST' });
+                if (!res.ok) throw new Error(await errorText(res));
+                await loadSubmissions();
+            } catch (e) {
+                showStatus(`Could not judge: ${esc(e.message)}`, 'error');
+                if (btn) { btn.disabled = false; btn.textContent = 'Judge'; }
+            }
+        }
+
+        async function judgeAllPending(btn) {
+            if (!currentEventId) return;
+            if (btn) { btn.disabled = true; btn.textContent = 'Judging...'; }
+            try {
+                const res = await fetch(`/api/events/${currentEventId}/judge-pending`, { method: 'POST' });
+                if (!res.ok) throw new Error(await errorText(res));
+                const body = await res.json();
+                const parts = [];
+                if (body.judged.length) parts.push(`${body.judged.length} judged`);
+                if (body.failed.length) parts.push(`${body.failed.length} still failing`);
+                showStatus(esc(parts.join(' \u00b7 ') || 'Nothing to judge'), body.failed.length ? 'error' : 'info');
+                await loadSubmissions();
+            } catch (e) {
+                showStatus(`Could not judge the backlog: ${esc(e.message)}`, 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Judge all'; }
+            }
         }
 
         // --- Deleting ------------------------------------------------------

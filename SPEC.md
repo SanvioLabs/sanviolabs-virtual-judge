@@ -240,6 +240,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R45 | Every recording that has not produced a review can be judged in one action, one team at a time, and a team that fails does not stop the rest | observed | `api_judge_pending` | `TestRecordNowJudgeLater` |
+| R44 | A recording survives a failed judging and can be judged at any later time. A provider outage costs the wait, not the pitch | observed | `api_upload_audio`, `_pending` | `TestRecordNowJudgeLater` |
 | R43 | Every provider timeout is roughly four times a measured call, not a guess. Transcription 90s, scoring 60s, speech 60s, and the PRFAQ 180s because it writes a document after the room has cleared | observed, measured 2026-08-23 | `transcribe`, `llm`, `speak`, `prfaq` | `TestTimeoutsTraceToAMeasurement` |
 | R42 | A rubric file may claim the default with `default: true`. Without one the most recently created wins, which is R2 unchanged | observed | `rubrics.get_default_rubric_id` | `TestARubricCanDeclareItselfTheDefault` |
 | R41 | The finalist round's input grows linearly with team count and is not the limit on event size. Measured at roughly 4k tokens for 3 teams, 24k for 20, 49k for 40 and 97k for 80, against full five minute transcripts | observed, measured 2026-08-23 | `llm.run_finalist_round` | `TestTheFinalistRoundScalesWithTheRoom` |
@@ -248,15 +250,15 @@ Authority changes hands in exactly three places `[observed]`:
 | R38 | Team names are distinct within an event, checked at registration, matched the same way the finalist round matches them | observed | `api_create_submission` | `TestTeamNamesAreUniqueWithinAnEvent` |
 | R37 | A finalist round needs at least three completed submissions, because the podium it produces is three | observed | `api_run_finalist`, `llm.run_finalist_round` | `TestThePodiumSetsTheMinimum` |
 | R36 | The product is unauthenticated by design and assumes a trusted network. `npm run dev` binds localhost; `npm run start` binds `0.0.0.0` and is an explicit, separate opt-in to exposing the event to the local network | observed | `package.json`, README | `TestTheNetworkPosture` |
-| R35 | A submission moves `recording → transcribing → scoring → speaking → complete`. `error` is reachable from any stage and is not terminal: a retry re-enters at `transcribing` | observed | `api_judge_submission` | `TestTheStatusSequence` |
-| R34 | A submission's status is one of the six the system defines. Which transitions between them are legal is undecided | observed | `db.SUBMISSION_STATUSES` | `TestStatusIsOneOfOurs` |
+| R35 | A submission moves `recording → recorded → transcribing → scoring → speaking → complete`. `recorded` means the audio is captured and judging has not started. `error` is reachable from any stage and is not terminal: a retry re-enters at `transcribing` | observed | `api_upload_audio`, `_judge_submission` | `TestTheStatusSequence` |
+| R34 | A submission's status is one of the seven the system defines | observed | `db.SUBMISSION_STATUSES` | `TestStatusIsOneOfOurs` |
 | R33 | Audio is served only under the four names the system writes, and only for a submission or event that still exists. Nothing else in `audio_recordings/` is reachable | observed | `api_audio` | `TestAudioIsServedOnlyForRecordsThatExist` |
 | R32 | A rubric's `judge_persona` sets tone, emphasis and what the judge values. The **shape** of the spoken review, its length, how many improvements it names and how it closes, is fixed by the product prompt and is not a rubric's to set | observed | `judge/llm.py`, `rubrics/example-hackathon.yaml` | `TestTheRubricDoesNotFightThePrompt` |
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Forty-two of forty-three are observed and one rests only on the README.
-Forty-two carry a test. The one without, R19, is a process instruction to
+Forty-four of forty-five are observed and one rests only on the README.
+Forty-four carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
@@ -288,10 +290,16 @@ overnight or unattended run has no way to report anything.
 | Schema change | A pre-events database is copied aside before the destructive migration and the location is logged | observed |
 | Capacity | Measured. The finalist prompt is about 24k tokens at 20 teams and 97k at 80, so it is not the constraint. The constraint is the roughly thirty seconds of live judging per team, which is a property of the room rather than of the software | observed |
 
-**The failure that has no handling** is a provider outage mid-event. Retry covers
-a transient error; a sustained one leaves the team unjudged with the room
-waiting, and there is no degraded mode, no queue, and no way to record now and
-judge later `[observed]`. Whether that is acceptable is `[undecided]`.
+**A provider outage no longer costs the event.** Retry covers a transient
+error. For a sustained one the recording is kept and the room moves on: the
+operator can tick "record only" to skip the wait entirely, or let judging fail
+and be told the pitch is safe. The Submissions tab shows the backlog and clears
+it in one action, one team at a time because the provider is already struggling
+`[observed]`. R44 and R45.
+
+What is still not handled is the outage that lasts past the end of the event,
+which is now a matter of when the operator comes back rather than of losing
+anything.
 
 **How long that failure takes to become visible** is measured rather than
 guessed. On 2026-08-23 the pipeline was run against the real providers on
