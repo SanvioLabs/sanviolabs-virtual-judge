@@ -48,6 +48,14 @@ Optional model overrides:
 | `OPENROUTER_TRANSCRIPTION_MODEL` | `google/gemini-3.7-flash` | Must accept **audio input** |
 | `OPENROUTER_PRFAQ_MODEL` | falls back to the scoring model | PRFAQ writing is a heavier task than scoring — point it at a stronger model if you want |
 
+Optional behaviour overrides:
+
+| Var | Default | Notes |
+|-----|---------|-------|
+| `VJ_MAX_UPLOAD_MB` | `100` | Ceiling on one recording. A five minute pitch is a couple of megabytes, so this is a guard, not a limit you should meet |
+| `VJ_FINALIST_TRANSCRIPT_CHARS` | `6000` | How much of each pitch the finalist round reads. Enough for a full five minute pitch. Lower it if you point the round at a small-context model |
+| `VJ_DB_PATH` | `judge.db` in the project root | Where the database lives. The test suite sets this so a run never touches your event data |
+
 ### The database
 
 There is nothing to create. On first start the server builds `judge.db` in the
@@ -148,6 +156,8 @@ This binds to `0.0.0.0:8000` — share your local IP (e.g., `http://192.168.1.42
 | `npm run test` | Run unit/API test suite (pytest) |
 | `npm run test:e2e` | Run Playwright browser tests |
 | `npm run test:e2e:headed` | Run E2E tests with visible browser |
+| `npm run test:e2e:install` | Install the Chromium build Playwright uses |
+| `npm run test:e2e:ui` | Run E2E tests in Playwright's interactive UI |
 | `npm run test:all` | Run everything (pytest + Playwright) |
 | `npm run setup` | Install deps + create .env |
 | `npm run db:reset` | Wipe the database (fresh start) |
