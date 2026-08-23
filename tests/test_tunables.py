@@ -11,6 +11,7 @@ Q5, Q6, Q8, Q10 and Q13 stay open until somebody says.
 """
 
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -113,7 +114,6 @@ class TestTheNetworkPosture:
     def test_the_readme_tells_you_to_set_a_code_when_you_expose_it(self):
         """It used to say only that there was no authentication. There is now,
         opt-in, and the sentence that matters is when to turn it on."""
-        from pathlib import Path
         readme = (Path(__file__).parent.parent / "README.md").read_text()
         assert "Set an access code when you do" in readme
         assert "VJ_ACCESS_CODE" in readme
@@ -122,7 +122,6 @@ class TestTheNetworkPosture:
     def test_the_readme_says_what_leaves_the_machine(self):
         """An operator running this on real participants needs to know their
         voices go to two third parties before they press record."""
-        from pathlib import Path
         readme = (Path(__file__).parent.parent / "README.md").read_text()
         assert "What leaves your machine" in readme
         assert "OpenRouter" in readme and "ElevenLabs" in readme
@@ -209,6 +208,46 @@ class TestTimeoutsTraceToAMeasurement:
         assert "get_client(timeout=180.0)" in inspect.getsource(prfaq._get_client)
 
     def test_the_worst_case_is_stated_in_the_spec(self):
-        from pathlib import Path
         spec = (Path(__file__).parent.parent / "SPEC.md").read_text()
         assert "eleven minutes" in spec
+
+
+class TestPublishedMarkdownHasNoInternalFrontmatter:
+    """SPEC.md R52.
+
+    This repo was written inside a private workspace whose house style puts YAML
+    frontmatter on every document, so README.md carried `type: readme`, `scope:
+    project` and friends. GitHub does not strip it. It renders as a heading, so
+    the largest text on the repo's front page was internal filing metadata sitting
+    above the project's own title.
+
+    The convention is correct where it came from and wrong here, and the way it
+    got in was automatic, which is why this is a test rather than a note.
+    """
+
+    def _published_markdown(self):
+        import subprocess
+        root = Path(__file__).parent.parent
+        out = subprocess.run(["git", "ls-files", "*.md"], cwd=root,
+                             capture_output=True, text=True, check=True)
+        return [root / p for p in out.stdout.split() if p]
+
+    def test_there_is_markdown_to_check(self):
+        assert len(self._published_markdown()) >= 3
+
+    def test_no_published_document_opens_with_frontmatter(self):
+        offenders = [
+            p.name for p in self._published_markdown()
+            if p.read_text().startswith("---\n")
+        ]
+        assert offenders == [], (
+            f"{offenders} open with YAML frontmatter, which GitHub renders as a "
+            "heading above the document's own title"
+        )
+
+    def test_the_spec_still_says_what_it_was_read_at(self):
+        """Removing the frontmatter must not lose the pinned commit. A spec read
+        off a moving branch is a spec of nothing."""
+        spec = (Path(__file__).parent.parent / "SPEC.md").read_text()
+        assert "Read at" in spec
+        assert "d359e7c" in spec

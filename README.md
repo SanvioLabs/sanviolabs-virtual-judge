@@ -1,12 +1,3 @@
----
-type: readme
-scope: project
-project: virtual-judge
-status: active
-updated: '2026-08-23'
-title: Virtual Judge
----
-
 # Virtual Judge
 
 [![CI](https://github.com/SanvioLabs/sanviolabs-virtual-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/SanvioLabs/sanviolabs-virtual-judge/actions/workflows/ci.yml)

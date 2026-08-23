@@ -1,16 +1,3 @@
----
-doc: spec
-skill: salvage
-subject: Virtual Judge
-read_at:
-  repo: SanvioLabs/sanviolabs-virtual-judge
-  sha: d359e7c
-  branch: main
-  tree: clean
-  date: 2026-08-23
-verdict: Salvaged
----
-
 # Virtual Judge, recovered specification
 
 ## 1. What this system is
@@ -24,6 +11,12 @@ Backwards PRFAQ written from their own pitch.
 
 The unit of work is **one team's pitch**, from the moment recording starts to the
 moment the room hears the verdict.
+
+**Read at** `SanvioLabs/sanviolabs-virtual-judge` commit `d359e7c` on `main`,
+working tree clean, 2026-08-23. A spec read off a moving branch is a spec of
+nothing, so the commit is stated rather than implied: six weeks from now a
+discrepancy between this and the code is either drift or an error in the
+reading, and the only way to tell is to know what was read.
 
 **How this document was produced.** It was recovered from the code at the SHA in
 the frontmatter, not written before it. Every statement carries a grade, and the
@@ -240,6 +233,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R52 | No published Markdown opens with YAML frontmatter. GitHub renders it as a heading rather than hiding it, so internal filing metadata appeared above the document's own title | observed | `README.md`, `SPEC.md`, `docs/spec-questions.md` | `TestPublishedMarkdownHasNoInternalFrontmatter` |
 | R51 | A model response that is valid apart from control characters inside strings, or a trailing comma, is repaired and parsed. Anything else reports the decoder's own reason, its position, and the text around it | observed | `_repair_common_faults`, `_describe_parse_failure` | `TestModelJsonThatIsNearlyValid` |
 | R50 | Every error the operator can act on is shown on screen, in a place visible from the view they are in. Nothing is reported to the console alone | observed | `notify`, `#app-status` | `e2e/error-visibility.spec.ts` |
 | R49 | Re-judging reuses the stored transcript. Transcription runs only when there is none, or when `?retranscribe=true` asks for it, which is the case where the transcript itself was wrong | observed | `_judge_submission` | `TestRejudgingAJudgedTeam` |
@@ -263,8 +257,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Fifty of fifty-one are observed and one rests only on the README. Fifty carry
-a test. The one without, R19, is a process instruction to
+Fifty-one of fifty-two are observed and one rests only on the README.
+Fifty-one carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each

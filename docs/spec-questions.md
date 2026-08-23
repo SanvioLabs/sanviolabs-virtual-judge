@@ -1,17 +1,6 @@
----
-doc: analysis
-skill: salvage
-subject: Virtual Judge, undecided requirements
-read_at:
-  repo: SanvioLabs/sanviolabs-virtual-judge
-  sha: d359e7c
-  branch: main
-  tree: clean
-  date: 2026-08-23
-verdict: Open
----
-
 # Virtual Judge, the questions the code cannot answer
+
+Read at commit `d359e7c` on `main`, 2026-08-23, alongside `SPEC.md`.
 
 Every item here is a choice the code makes that nothing records a reason for. A
 constant is not a requirement. `max_attempts=3` is an observed behaviour and an
