@@ -22,6 +22,6 @@
     "reset": "npm run db:reset && npm run audio:clean && npm run exports:clean"
   },
   "devDependencies": {
-    "@playwright/test": "1.52.0"
+    "@playwright/test": "1.62.1"
   }
 }
