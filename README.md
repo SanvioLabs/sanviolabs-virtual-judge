@@ -289,6 +289,18 @@ Three notes worth knowing before an event:
 3. **A category `description` is the scoring prompt, not a label.** The model reads it
    as the instruction for that category, so it is worth writing in full sentences.
 
+## Specification
+
+[`SPEC.md`](SPEC.md) is the recovered specification: the boundary, every surface,
+the core data path, the data model with the invariants the code assumes and does
+not enforce, and thirty requirements each graded by what it rests on. It was
+worked backwards from the code rather than written before it, so it also carries
+what the code decides without recording a reason.
+
+Those undecided items live in [`docs/spec-questions.md`](docs/spec-questions.md).
+Seventeen of them, each addressed to whoever can settle it. A constant is not a
+requirement, and the difference is what a rewrite would lose.
+
 ## Architecture
 
 ```
