@@ -3,11 +3,13 @@ type: readme
 scope: project
 project: virtual-judge
 status: active
-updated: '2026-08-14'
+updated: '2026-08-23'
 title: Virtual Judge
 ---
 
 # Virtual Judge
+
+[![CI](https://github.com/SanvioLabs/sanviolabs-virtual-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/SanvioLabs/sanviolabs-virtual-judge/actions/workflows/ci.yml)
 
 AI-powered judging for hackathons and pitch events. Record a pitch, get it transcribed, scored against a rubric by an LLM, and hear the review spoken back — all in under a minute.
 
@@ -384,6 +386,8 @@ virtual-judge/
 |--------|------|-------------|
 | `GET` | `/` | The web UI |
 | `GET` | `/api/health` | Health check — key presence, models, counts. Add `?verify=1` for a live provider check |
+| `POST` | `/api/session` | Exchange an access code for a session cookie. Only meaningful when `VJ_ACCESS_CODE` is set |
+| `GET` | `/audio/:filename` | One recording, for a submission or event that still exists. Nothing else in `audio_recordings/` is reachable |
 | `GET` | `/api/rubrics` | List available rubrics |
 | `GET` | `/api/events` | List all events |
 | `POST` | `/api/events` | Create event `{name, rubric_id?, description?}` |
