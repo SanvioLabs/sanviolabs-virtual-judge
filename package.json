@@ -18,6 +18,7 @@
     "db:reset": "rm -f judge.db judge.db-wal judge.db-shm && echo 'Database reset.'",
     "audio:clean": "rm -rf audio_recordings/*.webm audio_recordings/*.mp3 && echo 'Audio files cleaned.'",
     "exports:clean": "rm -rf exports/* && echo 'Export bundles removed.'",
+    "purge": "uv run python scripts/purge.py",
     "reset": "npm run db:reset && npm run audio:clean && npm run exports:clean"
   },
   "devDependencies": {

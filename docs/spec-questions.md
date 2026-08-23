@@ -22,7 +22,7 @@ reading the code will never tell you which.
 Ordered by what the answer changes, not by where it was found. The first four
 are a call agenda. The rest is the backlog.
 
-**Where this stands.** Fourteen of the seventeen are closed and two are half closed, because the answer turned out to be already in the design rather than
+**Where this stands.** All seventeen are closed. Three were built on 2026-08-23 after Pat authorised them; the rest resolved by reading the design or by measurement, because the answer turned out to be already in the design rather than
 in someone's head. Those are marked. The rest split into two kinds, and the
 difference matters:
 
@@ -43,6 +43,11 @@ That is a guard against accident. It is not an answer.
 ---
 
 Q1. Should the product gain authentication?
+   Status:   **Closed. Built.** R46. `VJ_ACCESS_CODE`, off by default so
+             localhost and every existing install are unchanged, required on
+             every route carrying event data when set. One shared code, no
+             accounts, which is the right size for a tool one person runs for
+             two hours and is not a substitute for a trusted network
    Status:   **Narrowed.** The current posture is no longer undecided: R36
              states it. Unauthenticated by design, trusted network assumed,
              `dev` on localhost, `start` an explicit opt-in to LAN exposure,
@@ -56,6 +61,11 @@ Q1. Should the product gain authentication?
    Ask:      Pat
 
 Q2. Should the product hold participant recordings to a retention rule?
+   Status:   **Closed. Built, deliberately not automatic.** R47. `npm run purge
+             -- --older-than N` removes old events and their recordings, with a
+             dry run that names them first. Nothing expires on a timer: these
+             are voices, and deleting one somebody still needs on a schedule
+             they did not set is the unrecoverable direction
    Status:   **Half closed.** The disclosure half is done: the README now names
              exactly what leaves the machine and to whom, says there is no
              consent step, and says nothing expires. An organiser can no longer
@@ -203,6 +213,8 @@ Q13. What is the spoken review's word budget for, and where did 150 to 170 come 
    Ask:      Pat
 
 Q14. Should `exports/` ever be cleaned up?
+   Status:   **Closed.** `npm run exports:clean` for the bundles, and R47's
+             purge for the events behind them. Manual, for the same reason
    Found:    `api_export_bundle`
    Behaviour: Every export writes a new dated folder containing full transcripts
              and audio. Nothing removes them `[observed]`
@@ -218,6 +230,10 @@ Q15. Is serving every recording from an open static mount intended?
    Ask:      Pat, under Q1
 
 Q16. What should happen when a provider is down mid-event?
+   Status:   **Closed. Built.** R44 and R45. The recording survives a failed
+             run and can be judged whenever the provider returns. "Record only,
+             judge later" skips the wait entirely for a known outage, and the
+             Submissions tab clears the backlog one team at a time
    Status:   **Half closed.** The invisible half is fixed. The worst case is
              quantified in the spec at roughly seventeen minutes, and the UI now
              counts elapsed time instead of repeating "about thirty seconds"

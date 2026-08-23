@@ -209,6 +209,7 @@ public tunnel.
 | `npm run db:reset` | Wipe the database (fresh start) |
 | `npm run audio:clean` | Delete all recorded/generated audio |
 | `npm run exports:clean` | Delete every export bundle |
+| `npm run purge -- --older-than N` | Remove events older than N days, with their recordings. Add `--dry-run` first |
 | `npm run reset` | Full reset: database, audio and exports |
 
 ## PRFAQs — what each team takes home
@@ -405,6 +406,17 @@ there.
 Every export writes a new dated folder under `exports/` holding full transcripts,
 PRFAQs and audio. Nothing removes them, so they accumulate one copy of the event
 per export. `npm run exports:clean` clears them once you have sent them on.
+
+To remove old events and their recordings by age:
+
+```bash
+npm run purge -- --older-than 30 --dry-run   # names what would go
+npm run purge -- --older-than 30             # removes it
+```
+
+Nothing expires on a timer. These are people's voices, and deleting a recording
+somebody still needs on a schedule they did not set is worse than a directory
+that grows. The dry run is there because the mistake is not recoverable.
 
 `judge.db`, `audio_recordings/` and `exports/` are all gitignored, and they must
 stay that way. They hold recordings of real people pitching, their transcripts,

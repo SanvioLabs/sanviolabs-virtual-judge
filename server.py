@@ -44,7 +44,7 @@ else:
 
 # Rendering is deterministic either way — the disclaimer and provenance blocks are
 # written in Python, so mock mode exercises the same document the event produces.
-from datetime import UTC
+from datetime import UTC, datetime
 
 from judge.prfaq import prfaq_model
 from judge.prfaq import render_markdown as render_prfaq_markdown
@@ -93,6 +93,59 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 # Audio is served by the route below rather than mounted. A mount publishes the
 # whole directory, so anything that lands in it is reachable, including files no
 # submission refers to and recordings whose submission has since been deleted.
+
+
+def purge_older_than(days: int, dry_run: bool = False) -> list[dict]:
+    """Remove every event older than `days`, with its recordings.
+
+    Not automatic, and not on a timer. Deleting a recording somebody still
+    needs, on a schedule they did not set, is worse than a directory that
+    grows. This is a command the operator runs when they have decided the
+    material has served its purpose.
+
+    Recordings are people's voices, so the two failure modes are not
+    symmetric: keeping too long is a policy problem, deleting too early is
+    unrecoverable. Hence the refusal below, the exclusive comparison, and the
+    dry run.
+    """
+    if days < 1:
+        raise ValueError(
+            f"Refusing to purge with an age of {days}. Give a positive number of "
+            "days, because 0 or less would remove everything."
+        )
+
+    now = datetime.now(UTC)
+    doomed = []
+    for event in db.list_events():
+        created = event.get("created_at") or ""
+        try:
+            when = datetime.fromisoformat(created)
+        except ValueError:
+            continue  # Unparseable timestamp: leave it alone rather than guess.
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        # Whole days, and strictly greater. Comparing instants puts an event
+        # created exactly `days` ago microseconds on the wrong side of the
+        # line, and deleting somebody's recording on a rounding error is not a
+        # bug you get to apologise for afterwards.
+        if (now - when).days <= days:
+            continue
+        doomed.append({
+            "id": event["id"],
+            "name": event["name"],
+            "created_at": created,
+            "submissions": len(db.list_submissions(event_id=event["id"])),
+        })
+
+    if dry_run:
+        return doomed
+
+    for event in doomed:
+        audio_paths = db.delete_event(event["id"])
+        event["audio_files_removed"] = _remove_audio_files(
+            audio_paths, AUDIO_DIR / f"finalist_{event['id'][:8]}.mp3"
+        )
+    return doomed
 
 
 # --- Access code -------------------------------------------------------------

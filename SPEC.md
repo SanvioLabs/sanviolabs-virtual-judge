@@ -136,7 +136,7 @@ product provides no consent gate, no retention policy, and no deletion schedule
 
 | Store | Holds | Retention |
 |---|---|---|
-| `judge.db`, SQLite in WAL mode | The complete event record | Nothing expires it. Deletion is manual, per event or per submission `[observed]` |
+| `judge.db`, SQLite in WAL mode | The complete event record | Nothing expires it on its own. Removal is the operator's: per submission, per event, or by age with `npm run purge` `[observed]` |
 | `audio_recordings/` | Every pitch as `.webm`, its MP3 transcode, and every generated review MP3 | Nothing expires it. Removed only when its submission or event is deleted `[observed]` |
 | `exports/` | Bundles written by `export/bundle` | Never cleaned `[observed]` |
 
@@ -240,6 +240,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R47 | Events older than a given age, with their recordings, can be removed in one command. Never automatically, never on a timer, and never below an age of one day | observed | `purge_older_than`, `scripts/purge.py` | `tests/test_purge.py` |
 | R46 | Setting `VJ_ACCESS_CODE` requires that code on every route carrying event data, by header or by cookie. Unset, which is the default and every existing install, nothing changes. `/`, `/static/*` and `/api/health` stay open so the page can load and be checked | observed | `require_access_code` | `tests/test_auth.py`, `e2e/access-code.spec.ts` |
 | R45 | Every recording that has not produced a review can be judged in one action, one team at a time, and a team that fails does not stop the rest | observed | `api_judge_pending` | `TestRecordNowJudgeLater` |
 | R44 | A recording survives a failed judging and can be judged at any later time. A provider outage costs the wait, not the pitch | observed | `api_upload_audio`, `_pending` | `TestRecordNowJudgeLater` |
@@ -258,8 +259,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Forty-five of forty-six are observed and one rests only on the README.
-Forty-five carry a test. The one without, R19, is a process instruction to
+Forty-six of forty-seven are observed and one rests only on the README.
+Forty-six carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
