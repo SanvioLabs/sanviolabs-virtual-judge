@@ -13,6 +13,11 @@ dependencies = [
     "python-multipart==0.0.20",
 ]
 
+[project.optional-dependencies]
+demo = [
+    "edge-tts>=7.2.8",
+]
+
 [dependency-groups]
 dev = [
     "pytest==8.3.5",

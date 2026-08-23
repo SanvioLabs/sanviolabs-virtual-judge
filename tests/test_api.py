@@ -1497,3 +1497,79 @@ class TestRejudgingAJudgedTeam:
         sub = await self._make_judged(client, mocks, 4, "done")
         event_id = (await client.get(f"/api/submissions/{sub['id']}")).json()["event_id"]
         assert (await client.get(f"/api/events/{event_id}/pending")).json() == []
+
+
+class TestNothingOperatorFacingHoldsTheEventLoop:
+    """SPEC.md R54.
+
+    R28 covers the judging pipeline. Two other routes made blocking calls
+    directly from a coroutine, which is the one fault the rest of this codebase
+    goes out of its way to avoid: `/api/health?verify=1` calls both providers,
+    and `export/bundle` reads the database and copies audio files.
+
+    Neither is on the live judging path, and both are things an operator does
+    mid-event: re-checking a flaky key, or pulling standings between teams.
+    """
+
+    def _blocking(self, seconds=1.0):
+        import time
+
+        def slow(*a, **kw):
+            time.sleep(seconds)
+            return {"openrouter": {"ok": True, "detail": "x"},
+                    "elevenlabs": {"ok": True, "detail": "y"}}
+        return slow
+
+    async def _health_is_answered_during(self, client, coroutine_factory):
+        import asyncio
+        import time
+        opened = time.monotonic()
+        slow_call = asyncio.create_task(coroutine_factory())
+        health = asyncio.create_task(client.get("/api/health"))
+        res = await health
+        elapsed = time.monotonic() - opened
+        await slow_call
+        return res, elapsed
+
+    @patch("server._verify_providers")
+    async def test_verify_does_not_freeze_everything_else(self, mock_verify, client):
+        mock_verify.side_effect = self._blocking(1.0)
+        res, elapsed = await self._health_is_answered_during(
+            client, lambda: client.get("/api/health?verify=1"))
+        assert res.status_code == 200
+        assert elapsed < 0.5, (
+            f"/api/health took {elapsed:.2f}s while a 1.0s verify ran, so the "
+            "event loop was held for two live provider calls")
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_exporting_a_bundle_does_not_freeze_everything_else(
+        self, mock_transcribe, mock_score, mock_speak, client, monkeypatch
+    ):
+        import time
+        mock_transcribe.return_value = "a pitch"
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}], "summary": "s"}
+        mock_speak.return_value = Path("/tmp/f.mp3")
+
+        event_id = await _get_event_id(client)
+        sub = await _create_submission(client, "Exported")
+        await client.post(f"/api/submissions/{sub['id']}/audio",
+                          files={"file": ("t.webm", b"audio", "audio/webm")})
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+
+        # Stand in for the file copying an export actually does.
+        real_write = Path.write_text
+
+        def slow_write(self, *a, **kw):
+            time.sleep(0.4)
+            return real_write(self, *a, **kw)
+
+        monkeypatch.setattr(Path, "write_text", slow_write)
+        res, elapsed = await self._health_is_answered_during(
+            client, lambda: client.get(f"/api/events/{event_id}/export/bundle"))
+        assert res.status_code == 200
+        assert elapsed < 0.3, (
+            f"/api/health took {elapsed:.2f}s during an export, so the event "
+            "loop was held for its disk writes")

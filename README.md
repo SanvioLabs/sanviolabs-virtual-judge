@@ -48,6 +48,7 @@ Optional behaviour overrides:
 | `VJ_MAX_UPLOAD_MB` | `100` | Ceiling on one recording. A five minute pitch is a couple of megabytes, so this is a guard, not a limit you should meet |
 | `VJ_FINALIST_TRANSCRIPT_CHARS` | `6000` | How much of each pitch the finalist round reads. Enough for a full five minute pitch. Lower it if you point the round at a small-context model |
 | `VJ_ACCESS_CODE` | unset | When set, every route carrying event data requires it. Set it whenever you use `npm run start` |
+| `MOCK_TTS_FULL` | unset | Mock mode only. Produces real playable MP3s instead of silence, so you can try the whole flow and share an export without an ElevenLabs key. Needs `uv sync --extra demo` |
 | `VJ_DB_PATH` | `judge.db` in the project root | Where the database lives. The test suite sets this so a run never touches your event data |
 
 ### The database
@@ -204,6 +205,7 @@ public tunnel.
 | `npm run dev` | Start with hot-reload (development) |
 | `npm run start` | Start on all interfaces (event/LAN mode) |
 | `npm run lint` | Lint with ruff |
+| `uvx pre-commit install` | Install the local hooks. Gitleaks, ruff, and a large-file guard |
 | `npm run lint:fix` | Lint and apply the safe fixes |
 | `npm run test` | Run unit/API test suite (pytest) |
 | `npm run test:e2e` | Run Playwright browser tests |

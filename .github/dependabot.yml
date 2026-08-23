@@ -1,0 +1,21 @@
+# Dependency updates. The lockfiles are committed and CI runs on every pull
+# request, so an update that breaks something fails before anyone looks at it.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  # The workflow's own actions pin to major versions, which still drift.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

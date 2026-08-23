@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -168,6 +169,52 @@ def access_code() -> str:
     return (os.environ.get("VJ_ACCESS_CODE") or "").strip()
 
 
+# Failed attempts per client address. In memory and per process, which is the
+# right size for a tool that runs on one laptop for two hours: a restart clears
+# it, and there is no second process to share it with.
+_FAILED_ATTEMPTS: dict[str, list] = {}
+
+ATTEMPTS_BEFORE_LOCKOUT = 5
+LOCKOUT_SECONDS = 30
+MAX_LOCKOUT_SECONDS = 15 * 60
+
+
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _locked_out(request: Request) -> float:
+    """Seconds still to wait, or 0.
+
+    compare_digest defeats a timing attack and does nothing about volume. A
+    code an organiser reads out loud is short by construction, and the network
+    it defends is the one the attacker is already on, so an unthrottled
+    endpoint is a wordlist away from open.
+    """
+    entry = _FAILED_ATTEMPTS.get(_client_key(request))
+    if not entry:
+        return 0.0
+    _, until = entry
+    return max(0.0, until - time.monotonic())
+
+
+def _record_failure(request: Request) -> None:
+    key = _client_key(request)
+    failures, _ = _FAILED_ATTEMPTS.get(key, (0, 0.0))
+    failures += 1
+    wait = 0.0
+    if failures >= ATTEMPTS_BEFORE_LOCKOUT:
+        # Doubles each time past the threshold, capped so a wrong code does not
+        # lock an operator out of their own event for the rest of the day.
+        over = failures - ATTEMPTS_BEFORE_LOCKOUT
+        wait = min(LOCKOUT_SECONDS * (2 ** over), MAX_LOCKOUT_SECONDS)
+    _FAILED_ATTEMPTS[key] = (failures, time.monotonic() + wait)
+
+
+def _clear_failures(request: Request) -> None:
+    _FAILED_ATTEMPTS.pop(_client_key(request), None)
+
+
 def _authorised(request: Request, code: str) -> bool:
     # compare_digest on both, so neither the header nor the cookie leaks the
     # answer through timing.
@@ -181,14 +228,31 @@ async def require_access_code(request: Request, call_next):
     path = request.url.path
     # The UI itself and its assets have to load, or there is nowhere to type the
     # code. They carry no event data. Everything that does is behind the check.
-    if not code or path in OPEN_PATHS or path.startswith("/static/"):
+    #
+    # One exception inside the exception: /api/health is open because it says
+    # whether the server is up, but ?verify=1 makes a live billed call to both
+    # providers. Left open it hands anyone on the network a way to spend money
+    # in a loop without knowing the code.
+    exempt = path in OPEN_PATHS or path.startswith("/static/")
+    if path == "/api/health" and request.query_params.get("verify"):
+        exempt = False
+    if not code or exempt:
         return await call_next(request)
 
+    wait = _locked_out(request)
+    if wait:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"Too many attempts. Try again in {wait:.0f} seconds."},
+        )
+
     if not _authorised(request, code):
+        _record_failure(request)
         return JSONResponse(
             status_code=401,
             content={"detail": "An access code is required. Enter it to continue."},
         )
+    _clear_failures(request)
     return await call_next(request)
 
 
@@ -197,13 +261,21 @@ class AccessCode(BaseModel):
 
 
 @app.post("/api/session")
-async def api_session(body: AccessCode):
+async def api_session(body: AccessCode, request: Request):
     """Exchange the code for a cookie, so the operator types it once."""
     code = access_code()
     if not code:
         return {"status": "open", "access_code_set": False}
+    wait = _locked_out(request)
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {wait:.0f} seconds.",
+        )
     if not secrets.compare_digest(body.code.strip(), code):
+        _record_failure(request)
         raise HTTPException(status_code=401, detail="That code is not right.")
+    _clear_failures(request)
 
     response = JSONResponse(content={"status": "ok"})
     # httponly so a script cannot read it back out, samesite=lax because the
@@ -439,7 +511,10 @@ async def health(verify: bool = False):
     }
 
     if verify:
-        result["verified"] = _verify_providers()
+        # On a worker thread, like every other provider call in this file. It
+        # is two live round trips, and an operator re-checking a flaky key
+        # mid-event should not stall the room while it happens.
+        result["verified"] = await asyncio.to_thread(_verify_providers)
         if not all(v["ok"] for v in result["verified"].values()):
             result["status"] = "key_check_failed"
 
@@ -1232,6 +1307,16 @@ async def api_export_json(event_id: str):
 
 @app.get("/api/events/{event_id}/export/bundle")
 async def api_export_bundle(event_id: str):
+    """Write the bundle on a worker thread.
+
+    It reads the database once per team and copies every pitch and review
+    recording. An operator pulling standings between teams should not queue the
+    next team's upload behind that.
+    """
+    return await asyncio.to_thread(_write_export_bundle, event_id)
+
+
+def _write_export_bundle(event_id: str):
     """Export full event results to a local folder for sharing.
 
     Creates a self-contained folder at `exports/{event_name}_{date}/` with:
@@ -1336,11 +1421,15 @@ async def api_export_bundle(event_id: str):
         f"|------|------|---------|" + "|".join(["------" for _ in rubric["categories"]]) + "|",
     ]
 
-    sorted_subs = sorted(
-        [(sub, db.get_scores(sub["id"]), db.get_review(sub["id"])) for sub in submissions if db.get_review(sub["id"])],
-        key=lambda x: x[2]["overall_score"],
-        reverse=True,
-    )
+    # Fetched once. The filter and the tuple used to call get_review
+    # separately, so every submission cost an extra query to answer the same
+    # question twice.
+    reviewed = []
+    for sub in submissions:
+        review = db.get_review(sub["id"])
+        if review:
+            reviewed.append((sub, db.get_scores(sub["id"]), review))
+    sorted_subs = sorted(reviewed, key=lambda x: x[2]["overall_score"], reverse=True)
 
     for rank, (sub, scores, review) in enumerate(sorted_subs, 1):
         scores_by_cat = {s["category"]: s["score"] for s in scores}

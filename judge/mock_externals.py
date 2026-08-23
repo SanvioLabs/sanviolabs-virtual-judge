@@ -83,7 +83,15 @@ def mock_speak(text: str, output_path: str | Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if os.environ.get("MOCK_TTS_FULL"):
-        _edge_tts_generate(text, output_path, voice="en-US-GuyNeural", max_chars=5000)
+        try:
+            _edge_tts_generate(text, output_path, voice="en-US-GuyNeural", max_chars=5000)
+        except Exception as e:
+            # The transcript path already degraded to silence on failure and
+            # this one did not, so a missing optional extra crashed the request
+            # instead of producing a usable mock.
+            import sys
+            print(f"Warning: mock TTS failed, falling back to silence: {e}", file=sys.stderr)
+            _write_silent_wav(output_path)
     else:
         _write_silent_wav(output_path)
 
@@ -94,7 +102,13 @@ def _edge_tts_generate(text: str, output_path: Path, voice: str = "en-US-GuyNeur
     """Generate real speech via edge-tts in a background thread."""
     import threading
 
-    import edge_tts
+    try:
+        import edge_tts
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "MOCK_TTS_FULL needs the optional demo extra, which is not installed. "
+            "Run: uv sync --extra demo"
+        ) from e
 
     tts_text = text[:max_chars]
     if len(text) > max_chars:

@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import server
 from judge import db
 
 
@@ -106,3 +107,87 @@ class TestWhenACodeIsSet:
     async def test_the_code_is_never_returned_anywhere(self, client, coded):
         body = (await client.get("/api/health")).text
         assert coded not in body
+
+
+class TestHealthIsOpenButVerifyIsNot:
+    """SPEC.md R53.
+
+    `/api/health` is exempt from the access code on purpose: it carries no event
+    data and it is how you check the server is up before an event. But
+    `?verify=1` makes a live billed call to OpenRouter and to ElevenLabs, so the
+    exemption handed anyone on the conference network a way to spend Sanvio's
+    money in a loop without knowing the code.
+
+    The plain check stays open. The one that costs money does not.
+    """
+
+    async def test_plain_health_stays_open(self, client, coded):
+        res = await client.get("/api/health")
+        assert res.status_code == 200
+        assert res.json()["access_code_set"] is True
+
+    async def test_verify_requires_the_code(self, client, coded):
+        res = await client.get("/api/health?verify=1")
+        assert res.status_code == 401
+
+    async def test_verify_works_with_the_code(self, client, coded):
+        with patch("server._verify_providers", return_value={"openrouter": {"ok": True, "detail": "x"}}):
+            res = await client.get("/api/health?verify=1", headers={"X-Access-Code": coded})
+        assert res.status_code == 200
+        assert "verified" in res.json()
+
+    async def test_verify_is_open_when_no_code_is_set(self, client, monkeypatch):
+        """Unchanged for every install that has not opted in."""
+        monkeypatch.delenv("VJ_ACCESS_CODE", raising=False)
+        with patch("server._verify_providers", return_value={}):
+            res = await client.get("/api/health?verify=1")
+        assert res.status_code == 200
+
+
+class TestTheCodeCannotBeBruteForced:
+    """SPEC.md R55.
+
+    compare_digest defeats a timing attack and does nothing about volume. A
+    code an organiser reads out to a room is short by construction, and the
+    network it defends is the one the attacker is already sitting on, so an
+    unthrottled endpoint is a wordlist away from open.
+    """
+
+    def setup_method(self):
+        server._FAILED_ATTEMPTS.clear()
+
+    async def test_wrong_codes_eventually_lock_out(self, client, coded):
+        for _ in range(server.ATTEMPTS_BEFORE_LOCKOUT):
+            assert (await client.post("/api/session", json={"code": "wrong"})).status_code == 401
+        res = await client.post("/api/session", json={"code": "wrong"})
+        assert res.status_code == 429
+        assert "too many attempts" in res.json()["detail"].lower()
+
+    async def test_the_lockout_covers_the_header_too(self, client, coded):
+        """Otherwise the guess loop just moves to a different route."""
+        for _ in range(server.ATTEMPTS_BEFORE_LOCKOUT):
+            await client.get("/api/events", headers={"X-Access-Code": "wrong"})
+        res = await client.get("/api/events", headers={"X-Access-Code": "wrong"})
+        assert res.status_code == 429
+
+    async def test_the_right_code_still_works_before_the_threshold(self, client, coded):
+        for _ in range(server.ATTEMPTS_BEFORE_LOCKOUT - 1):
+            await client.post("/api/session", json={"code": "wrong"})
+        assert (await client.post("/api/session", json={"code": coded})).status_code == 200
+
+    async def test_success_clears_the_count(self, client, coded):
+        """An operator who fumbles it twice and then gets it right is not one
+        typo away from being locked out of their own event."""
+        for _ in range(server.ATTEMPTS_BEFORE_LOCKOUT - 1):
+            await client.post("/api/session", json={"code": "wrong"})
+        await client.post("/api/session", json={"code": coded})
+        assert server._FAILED_ATTEMPTS == {}
+
+    async def test_the_lockout_is_capped(self):
+        """It doubles, but not until the end of the event."""
+        assert server.MAX_LOCKOUT_SECONDS <= 15 * 60
+
+    async def test_nothing_throttles_when_no_code_is_set(self, client, monkeypatch):
+        monkeypatch.delenv("VJ_ACCESS_CODE", raising=False)
+        for _ in range(server.ATTEMPTS_BEFORE_LOCKOUT + 3):
+            assert (await client.get("/api/events")).status_code == 200

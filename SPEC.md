@@ -233,6 +233,11 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R57 | The pinned CDN script carries an integrity hash, so a compromise of the registry or the package cannot run in the operator's browser | observed | `static/index.html` | `TestPublishedMarkdownHasNoInternalFrontmatter` covers docs; this is asserted by the tag itself |
+| R56 | A pitch transcript reaches the model fenced and labelled as data, with an instruction not to obey anything inside it. The model's reply is spoken to the room with no human in between, so a presenter's words must not read as instructions to the judge | observed | `judge/llm.py` | `TestAPitchIsDataNotInstructions` |
+| R55 | Repeated wrong access codes lock a client out, doubling and capped. `compare_digest` defeats timing; nothing defeated volume | observed | `_locked_out`, `_record_failure` | `TestTheCodeCannotBeBruteForced` |
+| R54 | No operator-facing route holds the event loop. R28 covers judging; `?verify=1` and `export/bundle` were the two that did not | observed | `asyncio.to_thread` | `TestNothingOperatorFacingHoldsTheEventLoop` |
+| R53 | `/api/health` is exempt from the access code because it carries no event data and answers whether the server is up. `?verify=1` is not exempt: it makes a live billed call to both providers | observed | `require_access_code` | `TestHealthIsOpenButVerifyIsNot` |
 | R52 | No published Markdown opens with YAML frontmatter. GitHub renders it as a heading rather than hiding it, so internal filing metadata appeared above the document's own title | observed | `README.md`, `SPEC.md`, `docs/spec-questions.md` | `TestPublishedMarkdownHasNoInternalFrontmatter` |
 | R51 | A model response that is valid apart from control characters inside strings, or a trailing comma, is repaired and parsed. Anything else reports the decoder's own reason, its position, and the text around it | observed | `_repair_common_faults`, `_describe_parse_failure` | `TestModelJsonThatIsNearlyValid` |
 | R50 | Every error the operator can act on is shown on screen, in a place visible from the view they are in. Nothing is reported to the console alone | observed | `notify`, `#app-status` | `e2e/error-visibility.spec.ts` |
@@ -257,8 +262,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Fifty-one of fifty-two are observed and one rests only on the README.
-Fifty-one carry a test. The one without, R19, is a process instruction to
+Fifty-six of fifty-seven are observed and one rests only on the README.
+Fifty-six carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each

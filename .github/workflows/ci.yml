@@ -34,6 +34,17 @@ jobs:
       - name: Ruff
         run: uv run ruff check --output-format=github .
 
+  dependencies:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    # Only meaningful on a pull request, where there is a base to diff against.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
   pytest:
     name: Unit and API tests
     runs-on: ubuntu-latest
