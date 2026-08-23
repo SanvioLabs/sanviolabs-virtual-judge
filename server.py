@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -53,6 +54,8 @@ if _env_path.exists():
             if value:
                 os.environ.setdefault(key, value)
 
+
+logger = logging.getLogger(__name__)
 
 AUDIO_DIR = Path(__file__).parent / "audio_recordings"
 AUDIO_DIR.mkdir(exist_ok=True)
@@ -110,6 +113,49 @@ def _safe_component(value: str, fallback: str = "unnamed") -> str:
     if not cleaned:
         return fallback
     return cleaned[:80]
+
+
+def _norm_category(name: str) -> str:
+    """Fold a category name for matching. The model retypes the name rather than
+    echoing an id, so case and spacing drift."""
+    return " ".join(str(name or "").split()).lower()
+
+
+def _overall_score(scores: list[dict], rubric: dict) -> tuple[float, list[str]]:
+    """Weighted average over the categories the model actually returned.
+
+    The numerator and the denominator have to describe the same set of
+    categories. Dividing the scores that came back by the sum of *every* rubric
+    weight reports a team that scored full marks in each category it was given
+    as having scored less than that, and a model that invents a fifth category
+    pushes the result above the scale's own maximum. Neither is visible in the
+    output: the number just comes out wrong, and it is read to the room.
+
+    Returns the score and the names of any categories that matched no rubric
+    entry, so the caller can say so rather than silently discarding them.
+    """
+    weights = {_norm_category(c["name"]): c.get("weight", 1.0) for c in rubric["categories"]}
+
+    weighted = 0.0
+    total_weight = 0.0
+    unmatched: list[str] = []
+
+    for s in scores:
+        weight = weights.get(_norm_category(s.get("category")))
+        if weight is None:
+            unmatched.append(s.get("category", ""))
+            continue
+        weighted += s["score"] * weight
+        total_weight += weight
+
+    if total_weight == 0:
+        raise ValueError(
+            "The judge returned no category matching the rubric "
+            f"(got {[s.get('category') for s in scores]}, "
+            f"expected {[c['name'] for c in rubric['categories']]})"
+        )
+
+    return weighted / total_weight, unmatched
 
 
 def _key_present(name: str) -> bool:
@@ -274,7 +320,14 @@ async def api_upload_audio(sub_id: str, file: UploadFile):
 
 @app.post("/api/submissions/{sub_id}/judge")
 async def api_judge_submission(sub_id: str):
-    """Run the full judging pipeline: transcribe → score → generate review audio."""
+    """Run the full judging pipeline: transcribe → score → generate review audio.
+
+    Every external step runs on a worker thread. They are synchronous, they take
+    roughly thirty seconds together, and retry backoff can stretch that into
+    minutes. Called directly they would hold the event loop for the whole run,
+    which freezes the UI and every other viewer on the network at exactly the
+    moment the room is waiting on a result.
+    """
     submission = db.get_submission(sub_id)
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
@@ -289,7 +342,7 @@ async def api_judge_submission(sub_id: str):
     # Step 1: Transcribe
     db.update_submission(sub_id, status="transcribing")
     try:
-        transcript = transcribe_audio(submission["audio_path"])
+        transcript = await asyncio.to_thread(transcribe_audio, submission["audio_path"])
     except KeyError:
         db.update_submission(sub_id, status="error")
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file")
@@ -301,7 +354,7 @@ async def api_judge_submission(sub_id: str):
 
     # Step 2: LLM scoring
     try:
-        result = score_submission(transcript, rubric)
+        result = await asyncio.to_thread(score_submission, transcript, rubric)
     except KeyError:
         db.update_submission(sub_id, status="error")
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file")
@@ -311,13 +364,17 @@ async def api_judge_submission(sub_id: str):
 
     db.save_scores(sub_id, result["scores"])
 
-    # Calculate overall score (weighted average)
-    category_weights = {c["name"]: c.get("weight", 1.0) for c in rubric["categories"]}
-    total_weight = sum(category_weights.values())
-    overall = sum(
-        s["score"] * category_weights.get(s["category"], 1.0)
-        for s in result["scores"]
-    ) / total_weight
+    # Overall score, averaged over the categories that were actually scored.
+    try:
+        overall, unmatched_categories = _overall_score(result["scores"], rubric)
+    except ValueError as e:
+        db.update_submission(sub_id, status="error")
+        raise HTTPException(status_code=500, detail=str(e))
+    if unmatched_categories:
+        logger.warning(
+            "Submission %s: judge returned categories not in the rubric, excluded from the "
+            "overall score: %s", sub_id, unmatched_categories,
+        )
 
     # Step 3: Generate spoken review
     review_text = _format_review_for_speech(
@@ -332,7 +389,7 @@ async def api_judge_submission(sub_id: str):
 
     db.update_submission(sub_id, status="speaking")
     try:
-        speak(review_text, audio_out)
+        await asyncio.to_thread(speak, review_text, audio_out)
     except KeyError:
         db.update_submission(sub_id, status="error")
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured — check your .env file")
@@ -352,6 +409,7 @@ async def api_judge_submission(sub_id: str):
         "summary": result["summary"],
         "spoken_review": review_text,
         "review_audio": f"/audio/{sub_id}_review.mp3",
+        **({"unmatched_categories": unmatched_categories} if unmatched_categories else {}),
     }
 
 
@@ -582,12 +640,12 @@ async def api_run_finalist(event_id: str):
         })
 
     # Run finalist LLM
-    result = run_finalist_round(sub_data, rubric)
+    result = await asyncio.to_thread(run_finalist_round, sub_data, rubric)
 
     # Generate spoken announcement
     announce_text = _format_finalist_for_speech(result)
     audio_out = AUDIO_DIR / f"finalist_{event_id[:8]}.mp3"
-    speak(announce_text, audio_out)
+    await asyncio.to_thread(speak, announce_text, audio_out)
 
     # Save
     db.save_finalist_run(

@@ -15,9 +15,10 @@ echo ""
 
 # Check if server is running
 echo "Checking server health..."
-HEALTH=$(curl -s "$JUDGE_URL/api/health")
-if [[ $? -ne 0 ]]; then
-    echo "❌ Virtual Judge server not running. Start with: npm run dev"
+HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$JUDGE_URL/api/health" || echo "000")
+if [[ "$HEALTH_CODE" != "200" ]]; then
+    echo "❌ Virtual Judge server not reachable at $JUDGE_URL (HTTP $HEALTH_CODE)."
+    echo "   Start it with: npm run dev"
     exit 1
 fi
 echo "✓ Server is up"
@@ -64,8 +65,15 @@ if [[ ! -f "$PITCH_AUDIO" ]]; then
     exit 1
 fi
 
-curl -s -X POST "$JUDGE_URL/api/submissions/$SUB_ID/audio" \
-  -F "audio=@$PITCH_AUDIO" > /dev/null
+UPLOAD_CODE=$(curl -s -o /tmp/vj_upload_response -w "%{http_code}" \
+  -X POST "$JUDGE_URL/api/submissions/$SUB_ID/audio" \
+  -F "file=@$PITCH_AUDIO")
+if [[ "$UPLOAD_CODE" != "200" ]]; then
+    echo "❌ Upload failed (HTTP $UPLOAD_CODE)"
+    cat /tmp/vj_upload_response
+    echo ""
+    exit 1
+fi
 echo "✓ Audio uploaded"
 echo ""
 
