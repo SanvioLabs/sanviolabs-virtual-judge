@@ -303,9 +303,10 @@ Three notes worth knowing before an event:
 1. **Rubrics sync by `name`.** Editing a rubric that has already been loaded does not
    update the copy in `judge.db`. Change the name, or run `npm run db:reset` on a
    database you do not need.
-2. **An event with no rubric gets the most recently created one.** If you keep several
-   rubrics around, set the rubric explicitly when you create the event rather than
-   trusting the default.
+2. **An event with no rubric gets the most recently created one**, unless a rubric
+   file claims the default with `default: true`. On a one-rubric install this never
+   comes up. The moment you add a second, set the flag or pick the rubric
+   explicitly, because otherwise load order decides.
 3. **A category `description` is the scoring prompt, not a label.** The model reads it
    as the instruction for that category, so it is worth writing in full sentences.
 

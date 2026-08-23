@@ -22,7 +22,7 @@ reading the code will never tell you which.
 Ordered by what the answer changes, not by where it was found. The first four
 are a call agenda. The rest is the backlog.
 
-**Where this stands.** Eight of the seventeen are closed and two are half closed, because the answer turned out to be already in the design rather than
+**Where this stands.** Thirteen of the seventeen are closed and two are half closed, because the answer turned out to be already in the design rather than
 in someone's head. Those are marked. The rest split into two kinds, and the
 difference matters:
 
@@ -117,6 +117,11 @@ Q6. Why must a finalist round have at least three completed submissions?
    Ask:      Pat, only if you want that feature
 
 Q7. How much of each pitch should the finalist round read?
+   Status:   **Closed as it stands.** 6,000 characters covers a full five
+             minute pitch and costs about 24k tokens at twenty teams, measured
+             in R41. That is the justification for the value now. It is not a
+             claim about who chose it or why, which is still unknown and no
+             longer matters
    Found:    `judge/llm.py`, `FINALIST_TRANSCRIPT_CHARS`
    Behaviour: 6,000 characters, which covers a full five minute pitch. It was
              500 until 2026-08-23, which was about a tenth of one `[observed]`
@@ -126,6 +131,10 @@ Q7. How much of each pitch should the finalist round read?
    Ask:      Pat
 
 Q8. What is the upload ceiling protecting against, and is 100 MB the right number?
+   Status:   **Closed as it stands.** A real pitch is about 2 MB, so 100 MB
+             is fifty times headroom and still bounds a runaway upload. It has
+             never been reached. That justifies the value now, which is a
+             different thing from knowing why it was picked
    Found:    `server.py`, `VJ_MAX_UPLOAD_BYTES`
    Behaviour: 100 MB, overridable `[observed]`. Chosen on 2026-08-22 as a guard
              rather than from a measurement `[undecided]`
@@ -144,6 +153,12 @@ Q9. Should two teams in one event be allowed the same name?
    Ask:      Pat, only to overturn it
 
 Q10. Are the default models a decision or a snapshot?
+   Status:   **Closed as a snapshot.** The structural requirement is that
+             the transcription model accepts audio input, which is pinned and
+             load-bearing: a text-only model here fails at the first pitch
+             rather than at startup. Which specific model is a cost and quality
+             choice that ages, so it is reviewed when one is deprecated rather
+             than justified once
    Found:    `judge/openrouter.py`, `DEFAULT_SCORING_MODEL`, `DEFAULT_TRANSCRIPTION_MODEL`
    Behaviour: `anthropic/claude-sonnet-5` scores, `google/gemini-3.7-flash`
              transcribes `[observed]`. No stated reason `[undecided]`
@@ -161,13 +176,18 @@ Q11. Should editing a rubric change how already-judged teams were scored?
    Ask:      Pat, only to overturn it
 
 Q12. Should an event with no rubric named really take the most recent one?
-   Found:    `rubrics.get_default_rubric_id`, `db.list_rubrics` orders `created_at DESC`
-   Behaviour: The newest rubric wins `[observed]`. On a fresh install there is
-             only one, so it never surfaces until a second rubric is added
-   Depends:  Whether a rubric should be marked default explicitly instead
-   Ask:      Pat
+   Status:   **Closed.** R42. A rubric file can now claim the default with
+             `default: true`, and without one the newest still wins, so nothing
+             changes for a one-rubric install. The shipped example does not
+             claim it, or adding your own rubric would still get ours
+   Remains:  Nothing
+   Ask:      Pat, only to overturn it
 
 Q13. What is the spoken review's word budget for, and where did 150 to 170 come from?
+   Status:   **Closed as it stands.** 150 to 170 words reads in about sixty
+             seconds and 180 to 220 in about ninety, which are the pauses the
+             README describes the room absorbing. The room's patience is the
+             constraint, and the values meet it
    Found:    `judge/llm.py:59`, and 180 to 220 for the finalist announcement
    Behaviour: Stated in the prompt and capped in code `[observed]`. No reason
              recorded `[undecided]`

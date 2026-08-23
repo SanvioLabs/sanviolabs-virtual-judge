@@ -614,3 +614,61 @@ class TestStatusIsOneOfOurs:
         source = (Path(__file__).parent.parent / "server.py").read_text()
         used = set(re.findall(r'status="([a-z]+)"', source))
         assert used <= db.SUBMISSION_STATUSES, f"server.py writes {used - db.SUBMISSION_STATUSES}"
+
+
+class TestARubricCanDeclareItselfTheDefault:
+    """SPEC.md R42.
+
+    Without a declared default the newest rubric wins, which is invisible until
+    the day somebody adds a second one and an event is quietly judged against
+    the wrong thing. The flag is opt-in, so nothing changes for an install with
+    one rubric.
+    """
+
+    def _dir(self, tmp_path, files):
+        d = tmp_path / "rubrics"
+        d.mkdir()
+        for name, body in files.items():
+            (d / name).write_text(body)
+        return d
+
+    def _rubric(self, name, default=False):
+        flag = "default: true\n" if default else ""
+        return f'name: "{name}"\n{flag}categories:\n  - name: "A"\n    description: "a"\n'
+
+    def test_the_declared_default_wins_over_the_newest(self, tmp_path, monkeypatch):
+        d = self._dir(tmp_path, {
+            "a.yaml": self._rubric("Chosen", default=True),
+            "b.yaml": self._rubric("Newer"),
+        })
+        monkeypatch.setattr(db, "DB_PATH", tmp_path / "j.db")
+        monkeypatch.setattr(rubrics, "RUBRICS_DIR", d)
+        db.init_db()
+        rubrics.sync_rubrics_to_db()
+        assert db.get_rubric(rubrics.get_default_rubric_id())["name"] == "Chosen"
+
+    def test_without_a_flag_the_newest_still_wins(self, tmp_path, monkeypatch):
+        """R2 is unchanged for anyone who does not opt in."""
+        d = self._dir(tmp_path, {"a.yaml": self._rubric("One"), "b.yaml": self._rubric("Two")})
+        monkeypatch.setattr(db, "DB_PATH", tmp_path / "j.db")
+        monkeypatch.setattr(rubrics, "RUBRICS_DIR", d)
+        db.init_db()
+        rubrics.sync_rubrics_to_db()
+        newest = db.list_rubrics()[0]["id"]
+        assert rubrics.get_default_rubric_id() == newest
+
+    def test_a_flag_pointing_at_a_rubric_that_failed_to_load_falls_back(self, tmp_path, monkeypatch):
+        d = self._dir(tmp_path, {"a.yaml": self._rubric("Present")})
+        monkeypatch.setattr(db, "DB_PATH", tmp_path / "j.db")
+        monkeypatch.setattr(rubrics, "RUBRICS_DIR", d)
+        db.init_db()
+        rubrics.sync_rubrics_to_db()
+        # Declared after the sync, so nothing in the database matches it.
+        (d / "b.yaml").write_text(self._rubric("Never Synced", default=True))
+        assert db.get_rubric(rubrics.get_default_rubric_id())["name"] == "Present"
+
+    def test_the_shipped_rubric_does_not_claim_the_default(self, tmp_path, monkeypatch):
+        """Otherwise adding your own rubric would still get ours."""
+        import yaml
+        shipped = Path(__file__).parent.parent / "rubrics" / "example-hackathon.yaml"
+        assert not yaml.safe_load(shipped.read_text()).get("default")

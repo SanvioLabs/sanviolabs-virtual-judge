@@ -37,9 +37,25 @@ def sync_rubrics_to_db():
 
 
 def get_default_rubric_id() -> str:
-    """Get the first rubric ID (or create from YAML if none exist)."""
-    rubrics = db.list_rubrics()
-    if not rubrics:
+    """The rubric an event gets when it names none.
+
+    A rubric file may claim it with `default: true`. Without that the most
+    recently created wins, which is invisible on a one-rubric install and
+    surprising on the day somebody adds a second: an event is then judged
+    against whichever was loaded last rather than whichever was meant.
+
+    The flag is opt-in, so nothing changes for anyone who does not use it, and
+    a flag naming a rubric that never loaded falls back rather than failing.
+    """
+    loaded = db.list_rubrics()
+    if not loaded:
         sync_rubrics_to_db()
-        rubrics = db.list_rubrics()
-    return rubrics[0]["id"]
+        loaded = db.list_rubrics()
+
+    by_name = {r["name"]: r["id"] for r in loaded}
+    for yaml_file in sorted(RUBRICS_DIR.glob("*.yaml")):
+        data = load_rubric_from_yaml(yaml_file)
+        if data.get("default") and data.get("name") in by_name:
+            return by_name[data["name"]]
+
+    return loaded[0]["id"]

@@ -240,6 +240,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R42 | A rubric file may claim the default with `default: true`. Without one the most recently created wins, which is R2 unchanged | observed | `rubrics.get_default_rubric_id` | `TestARubricCanDeclareItselfTheDefault` |
 | R41 | The finalist round's input grows linearly with team count and is not the limit on event size. Measured at roughly 4k tokens for 3 teams, 24k for 20, 49k for 40 and 97k for 80, against full five minute transcripts | observed, measured 2026-08-23 | `llm.run_finalist_round` | `TestTheFinalistRoundScalesWithTheRoom` |
 | R40 | While judging runs the operator sees elapsed time, not a fixed promise. The pipeline is usually about thirty seconds and its worst case, every provider call hanging to its timeout across three retries, is roughly seventeen minutes | observed | `startJudgingClock`, the timeouts in `judge/` | `recording-failures.spec.ts` |
 | R39 | A rubric is immutable once loaded. Sync is keyed on name and only inserts, so editing a rubric file produces a second rubric and leaves every scored event on the one it was judged against | observed | `rubrics.sync_rubrics_to_db` | `TestRubricsAreImmutableOnceLoaded` |
@@ -253,8 +254,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Forty of forty-one are observed and one rests only on the README. Forty carry
-a test. The one without, R19, is a process instruction to
+Forty-one of forty-two are observed and one rests only on the README.
+Forty-one carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
