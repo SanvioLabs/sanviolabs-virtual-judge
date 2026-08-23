@@ -34,6 +34,17 @@ jobs:
       - name: Ruff
         run: uv run ruff check --output-format=github .
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      # The frontend went unlinted while the Python half was gated from day
+      # one, and that is the half that renders untrusted text into a browser.
+      - name: ESLint
+        run: |
+          npm ci
+          npx eslint .
+
   dependencies:
     name: Dependency review
     runs-on: ubuntu-latest

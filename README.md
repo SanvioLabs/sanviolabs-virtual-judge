@@ -204,7 +204,9 @@ public tunnel.
 |---------|-------------|
 | `npm run dev` | Start with hot-reload (development) |
 | `npm run start` | Start on all interfaces (event/LAN mode) |
-| `npm run lint` | Lint with ruff |
+| `npm run lint` | Lint the Python with ruff |
+| `npm run lint:js` | Lint the frontend with eslint |
+| `npm run lint:all` | Both |
 | `uvx pre-commit install` | Install the local hooks. Gitleaks, ruff, and a large-file guard |
 | `npm run lint:fix` | Lint and apply the safe fixes |
 | `npm run test` | Run unit/API test suite (pytest) |

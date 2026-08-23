@@ -342,6 +342,8 @@ to a response that stopped early, and the advice attached to that message, raise
 max_tokens, is wrong for this cause. Both are retried, so it costs a misleading
 log line rather than a failed judging | `_unbalanced` | observed |
 
+| **Two possible races on the view-state globals**, flagged by `require-atomic-updates`. `currentEventId` is nulled after an awaited delete, and `currentSubmissionId` after an awaited upload. Switching events or teams while one is in flight would clobber the newer selection. One operator clicking one thing at a time never hits it, which is why it is a warning rather than a fix | `static/index.html:863,1644` | observed |
+
 Findings, not requirements. Nobody should preserve these by reading this
 document. Four of the six recorded on the first pass have since been specified
 and closed, and are now requirements R31 through R34 rather than defects. What
