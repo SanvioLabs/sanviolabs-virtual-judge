@@ -99,6 +99,10 @@ npm run dev
 
 Open http://localhost:8000
 
+**How to use** in the top right opens a modal covering the whole run: what to
+check before the first team, what to do for each one, the finalist round, and
+the PRFAQs afterwards. It is the fastest way to hand the laptop to someone else.
+
 ### Live Event Flow
 
 ```

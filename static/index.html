@@ -293,12 +293,213 @@
         /* Lucide icons */
         .btn svg, .btn i { display: inline; vertical-align: middle; }
         [data-lucide] { display: inline; vertical-align: middle; }
+
+        /* How to use — overlay modal.
+           The rest of this UI toggles panels in place with .hidden, which is fine
+           for a form. Help has to sit above whatever the operator is mid-way
+           through without moving it, so this one is a real overlay. */
+        .header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(3px);
+            z-index: 1000;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 2rem 1rem;
+            overflow-y: auto;
+        }
+
+        .modal-overlay.hidden { display: none !important; }
+
+        .modal {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 760px;
+            margin: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #334155;
+        }
+
+        .modal-header h2 { font-size: 1.4rem; color: #f1f5f9; }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 0.4rem;
+            border-radius: 6px;
+            display: inline-flex;
+            line-height: 0;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover { background: #334155; color: #f8fafc; }
+
+        .modal-body { padding: 1.5rem 2rem 2rem; }
+
+        .modal-body h3 {
+            font-size: 1.05rem;
+            color: #f8fafc;
+            margin: 1.75rem 0 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .modal-body h3:first-child { margin-top: 0; }
+
+        .modal-body p { color: #cbd5e1; line-height: 1.6; margin-bottom: 0.75rem; }
+
+        .modal-body a { color: #60a5fa; }
+
+        /* Numbered steps. The circle carries the order so the eye can find its
+           place again after looking up at the room. */
+        .steps { list-style: none; counter-reset: step; }
+
+        .steps li {
+            counter-increment: step;
+            position: relative;
+            padding: 0 0 0 2.5rem;
+            margin-bottom: 0.9rem;
+            color: #cbd5e1;
+            line-height: 1.55;
+        }
+
+        .steps li::before {
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1.65rem;
+            height: 1.65rem;
+            background: #3b82f6;
+            color: #fff;
+            border-radius: 50%;
+            font-size: 0.85rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .steps li strong { color: #f1f5f9; }
+
+        .modal-note {
+            background: #0f172a;
+            border-left: 3px solid #f59e0b;
+            border-radius: 6px;
+            padding: 0.9rem 1.1rem;
+            color: #cbd5e1;
+            line-height: 1.55;
+            margin-top: 1.5rem;
+        }
+
+        kbd {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-bottom-width: 2px;
+            border-radius: 5px;
+            padding: 0.1rem 0.4rem;
+            font-size: 0.85rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            color: #f8fafc;
+        }
+
+        @media (max-width: 600px) {
+            .modal-header, .modal-body { padding-left: 1.25rem; padding-right: 1.25rem; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1><i data-lucide="sparkles" style="display:inline;vertical-align:middle;width:2.2rem;height:2.2rem;margin-right:0.5rem;color:#3b82f6;"></i>Virtual Judge</h1>
-        <p class="subtitle">AI-Powered Pitch Evaluation</p>
+        <div class="header-row">
+            <div>
+                <h1><i data-lucide="sparkles" style="display:inline;vertical-align:middle;width:2.2rem;height:2.2rem;margin-right:0.5rem;color:#3b82f6;"></i>Virtual Judge</h1>
+                <p class="subtitle">AI-Powered Pitch Evaluation</p>
+            </div>
+            <button class="btn btn-secondary" id="btn-howto" onclick="openHowTo()" aria-haspopup="dialog" style="white-space:nowrap;"><i data-lucide="help-circle" style="width:16px;height:16px;"></i> How to use</button>
+        </div>
+
+        <!-- HOW TO USE -->
+        <div class="modal-overlay hidden" id="howto-overlay" onclick="handleHowToBackdrop(event)">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="howto-title">
+                <div class="modal-header">
+                    <h2 id="howto-title"><i data-lucide="help-circle" style="display:inline;vertical-align:middle;width:1.3rem;height:1.3rem;margin-right:0.4rem;color:#3b82f6;"></i>How to use Virtual Judge</h2>
+                    <button class="modal-close" id="howto-close" onclick="closeHowTo()" aria-label="Close"><i data-lucide="x" style="width:22px;height:22px;"></i></button>
+                </div>
+                <div class="modal-body">
+                    <p>One person drives this from one laptop. A team pitches, you record it, and about
+                       thirty seconds later the room hears the review read back.</p>
+
+                    <h3><i data-lucide="check-circle" style="width:18px;height:18px;color:#22c55e;"></i> Before the first team</h3>
+                    <ol class="steps">
+                        <li><strong>Check the keys.</strong> Open <code>/api/health?verify=1</code>. It makes a live
+                            call to each provider. A key being present is not the same as a key that works, and
+                            you want to find that out now rather than with a team standing in front of you.</li>
+                        <li><strong>Create the event.</strong> Pick it from the Event dropdown, or hit
+                            <strong>New Event</strong>. Everything you record is filed under it.</li>
+                        <li><strong>Do one dry run.</strong> Record thirty seconds of yourself and judge it.
+                            This is the only way to catch a mic problem before it costs you a team.</li>
+                    </ol>
+
+                    <h3><i data-lucide="mic" style="width:18px;height:18px;color:#3b82f6;"></i> For each team</h3>
+                    <ol class="steps">
+                        <li><strong>Type the team name</strong> in the Judge tab.</li>
+                        <li><strong>Hit Start Recording</strong> as they begin. The waveform confirms audio is
+                            actually reaching the machine.</li>
+                        <li><strong>Hit Stop &amp; Judge</strong> when they finish. Transcription, scoring and
+                            the spoken review run in one pass and take roughly thirty seconds.</li>
+                        <li><strong>Let the review play.</strong> Scores and reasoning appear on screen while the
+                            voice reads them out. That pause is a good moment for applause and swapping teams over.</li>
+                    </ol>
+
+                    <h3><i data-lucide="trophy" style="width:18px;height:18px;color:#f59e0b;"></i> Once everyone has pitched</h3>
+                    <ol class="steps">
+                        <li>Open the <strong>Finalist</strong> tab and hit <strong>Run Finalist Round</strong>.
+                            Every team is compared against every other, and the top three are announced out loud.</li>
+                    </ol>
+
+                    <h3><i data-lucide="file-text" style="width:18px;height:18px;color:#a78bfa;"></i> After the room clears</h3>
+                    <ol class="steps">
+                        <li><strong>Generate PRFAQs</strong> from the Submissions tab. Each team gets a Working
+                            Backwards document written from their own pitch: the product as though it had already
+                            launched, then the questions they cannot answer yet and a ledger grading every claim
+                            they made against what they actually showed.</li>
+                        <li><strong>Export to Folder</strong>, then send each team their own file. Most teams get
+                            more out of the ledger than out of where they placed.</li>
+                    </ol>
+
+                    <p class="modal-note"><strong>Two things that bite.</strong> Do not run PRFAQs between teams,
+                       because they take far longer than a room will sit through. And a laptop mic picks up the
+                       whole room, so a USB mic pointed at the presenter is the single biggest quality win
+                       available to you.</p>
+
+                    <p style="margin-top:1.25rem;color:#94a3b8;font-size:0.95rem;">Press <kbd>Esc</kbd> or click
+                       outside this box to close.</p>
+                </div>
+            </div>
+        </div>
 
         <!-- EVENT SELECTOR -->
         <div class="panel" id="event-selector" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
@@ -1068,6 +1269,42 @@
         function hideFinalistStatus() {
             document.getElementById('finalist-status').className = 'status';
         }
+
+        // --- How to use ---------------------------------------------------
+        // Where focus was before the modal opened, so it can be handed back on
+        // close. Losing it drops a keyboard user at the top of the document.
+        let howToOpener = null;
+
+        function openHowTo() {
+            howToOpener = document.activeElement;
+            document.getElementById('howto-overlay').classList.remove('hidden');
+            // The page behind must not scroll while the overlay is up.
+            document.body.style.overflow = 'hidden';
+            lucide.createIcons();
+            document.getElementById('howto-close').focus();
+        }
+
+        function closeHowTo() {
+            document.getElementById('howto-overlay').classList.add('hidden');
+            document.body.style.overflow = '';
+            if (howToOpener && howToOpener.focus) howToOpener.focus();
+            howToOpener = null;
+        }
+
+        function isHowToOpen() {
+            return !document.getElementById('howto-overlay').classList.contains('hidden');
+        }
+
+        // Only a click on the backdrop itself closes. Without the target check,
+        // a click anywhere inside the panel bubbles up and shuts the help while
+        // someone is reading it.
+        function handleHowToBackdrop(evt) {
+            if (evt.target.id === 'howto-overlay') closeHowTo();
+        }
+
+        document.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Escape' && isHowToOpen()) closeHowTo();
+        });
 
         // Initialize Lucide icons on page load
         document.addEventListener('DOMContentLoaded', () => {
