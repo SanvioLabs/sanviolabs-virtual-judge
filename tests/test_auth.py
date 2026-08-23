@@ -90,7 +90,7 @@ class TestWhenACodeIsSet:
         assert res.json()["access_code_set"] is True
 
     async def test_audio_is_covered(self, client, coded):
-        res = await client.get("/audio/11111111-2222-3333-4444-555555555555.webm")
+        res = await client.get("/audio/11111111-2222-3333-4444-aaaabbbbcccc.webm")
         assert res.status_code == 401
 
     async def test_a_cookie_works_so_the_browser_asks_once(self, client, coded):

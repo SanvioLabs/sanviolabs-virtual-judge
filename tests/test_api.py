@@ -1053,7 +1053,7 @@ class TestAudioIsServedOnlyForRecordsThatExist:
             path.unlink(missing_ok=True)
 
     async def test_an_unknown_submission_id_is_404(self, client):
-        assert (await client.get("/audio/11111111-2222-3333-4444-555555555555.webm")).status_code == 404
+        assert (await client.get("/audio/11111111-2222-3333-4444-aaaabbbbcccc.webm")).status_code == 404
 
     async def test_a_name_that_is_not_one_of_ours_is_404(self, client):
         for name in ("judge.db", "server.py", "anything.txt", "..%2Fserver.py"):
