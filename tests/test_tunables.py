@@ -123,3 +123,52 @@ class TestTheNetworkPosture:
         assert "What leaves your machine" in readme
         assert "OpenRouter" in readme and "ElevenLabs" in readme
         assert "no consent step" in readme
+
+
+class TestThePodiumSetsTheMinimum:
+    """SPEC.md R37. The finalist prompt asks for a top three, so a round needs
+    three teams. The minimum was never arbitrary; it follows from the podium."""
+
+    def test_the_prompt_asks_for_three(self):
+        source = inspect.getsource(llm.run_finalist_round)
+        assert "top 3" in source
+        assert '"rank": 3' in source
+
+    def test_the_route_requires_three(self):
+        import server
+        assert "len(completed) < 3" in inspect.getsource(server.api_run_finalist)
+
+
+class TestRubricsAreImmutableOnceLoaded:
+    """SPEC.md R39. Sync is keyed on name and only inserts, so a rubric an
+    event points at can never change underneath it. Editing a file produces a
+    second rubric and leaves existing events on the one they were judged
+    against, which is the guarantee a scored event needs."""
+
+    def test_sync_only_inserts(self):
+        from judge import rubrics
+        source = inspect.getsource(rubrics.sync_rubrics_to_db)
+        assert "if name not in existing" in source
+        assert "UPDATE" not in source.upper().replace("UPDATED", "")
+
+    def test_a_second_sync_does_not_change_the_first(self, tmp_path, monkeypatch):
+        from judge import db, rubrics
+        clone = tmp_path / "rubrics"
+        clone.mkdir()
+        (clone / "r.yaml").write_text(
+            'name: "Held"\ncategories:\n  - name: "A"\n    description: "first"\n'
+        )
+        monkeypatch.setattr(db, "DB_PATH", tmp_path / "j.db")
+        monkeypatch.setattr(rubrics, "RUBRICS_DIR", clone)
+        db.init_db()
+        rubrics.sync_rubrics_to_db()
+        before = db.list_rubrics()[0]
+
+        # Edit the file the way an organiser would, and restart.
+        (clone / "r.yaml").write_text(
+            'name: "Held"\ncategories:\n  - name: "A"\n    description: "changed"\n'
+        )
+        rubrics.sync_rubrics_to_db()
+
+        assert len(db.list_rubrics()) == 1
+        assert db.get_rubric(before["id"])["categories"][0]["description"] == "first"

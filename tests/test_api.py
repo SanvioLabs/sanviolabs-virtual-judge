@@ -1166,3 +1166,53 @@ class TestTheStatusSequence:
 
         assert res.status_code == 200
         assert seen == ["transcribing", "scoring", "speaking", "complete"]
+
+
+class TestTeamNamesAreUniqueWithinAnEvent:
+    """SPEC.md R38.
+
+    The finalist round already refuses to place the same team twice, so unique
+    names within an event was always a requirement. It was just enforced at the
+    end of the day instead of at the start: an operator could register two teams
+    called the same thing at 9am and find out at 5pm, with the room assembled,
+    that the finalist round would not run.
+
+    Enforced at registration now, which is when it is still free to fix.
+    """
+
+    async def test_a_duplicate_name_is_refused_at_registration(self, client):
+        event_id = await _get_event_id(client)
+        first = await client.post("/api/submissions",
+                                  json={"team_name": "Duplicate", "event_id": event_id})
+        assert first.status_code == 200
+
+        second = await client.post("/api/submissions",
+                                   json={"team_name": "Duplicate", "event_id": event_id})
+        assert second.status_code == 409
+        assert "already" in second.json()["detail"].lower()
+
+    async def test_the_check_ignores_case_and_spacing(self, client):
+        """Because the finalist round's does, and the two have to agree."""
+        event_id = await _get_event_id(client)
+        await client.post("/api/submissions", json={"team_name": "Team Alpha", "event_id": event_id})
+        for variant in ("team alpha", "TEAM  ALPHA", "  Team Alpha  "):
+            res = await client.post("/api/submissions",
+                                    json={"team_name": variant, "event_id": event_id})
+            assert res.status_code == 409, variant
+
+    async def test_the_same_name_in_a_different_event_is_fine(self, client):
+        first = (await client.post("/api/events", json={"name": "Event One"})).json()
+        second = (await client.post("/api/events", json={"name": "Event Two"})).json()
+        a = await client.post("/api/submissions", json={"team_name": "Shared", "event_id": first["id"]})
+        b = await client.post("/api/submissions", json={"team_name": "Shared", "event_id": second["id"]})
+        assert a.status_code == 200
+        assert b.status_code == 200
+
+    async def test_the_name_is_free_again_once_the_team_is_deleted(self, client):
+        event_id = await _get_event_id(client)
+        sub = (await client.post("/api/submissions",
+                                 json={"team_name": "Recycled", "event_id": event_id})).json()
+        await client.delete(f"/api/submissions/{sub['id']}")
+        again = await client.post("/api/submissions",
+                                  json={"team_name": "Recycled", "event_id": event_id})
+        assert again.status_code == 200

@@ -472,6 +472,23 @@ async def api_create_submission(body: NewSubmission):
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    # The finalist round refuses to place the same team twice, so unique names
+    # within an event was always required. Enforcing it here means the operator
+    # finds out while they are still typing, rather than when the room has
+    # assembled and the finalist round will not run. Matched the same way the
+    # finalist round matches, or the two checks would disagree.
+    wanted = _norm_category(body.team_name)
+    for existing in db.list_submissions(event_id=body.event_id):
+        if _norm_category(existing["team_name"]) == wanted:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{existing['team_name']!r} is already registered for this event. "
+                    "Team names have to be distinct, because the finalist round "
+                    "identifies teams by name."
+                ),
+            )
+
     sub_id = db.create_submission(
         team_name=body.team_name,
         event_id=body.event_id,

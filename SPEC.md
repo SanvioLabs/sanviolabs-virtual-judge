@@ -184,7 +184,7 @@ These are the requirements a rewrite loses. None is written down anywhere else.
 | Invariant | Depended on by | What breaks |
 |---|---|---|
 | **One score row per category per submission.** `scores` still has no uniqueness on `(submission_id, category)`; `save_scores` clears the submission's rows before writing, which enforces it in code rather than in the schema | the UI's score grid, the CSV column mapping, the export | A second writer, or a direct insert, reintroduces duplicates. Until 2026-08-23 re-judging did exactly that: 8 rows for a 4-category rubric, all 8 rendered `[observed]` |
-| **A team name is unique within an event** | export filenames, the finalist round matching names back to teams | Nothing enforces it. Export filenames are now de-duplicated with a numeric suffix, but the finalist reconciliation refuses a duplicate name outright, so an event with two identically named teams cannot complete a finalist round `[observed]` |
+| **A team name is unique within an event** | export filenames, the finalist round matching names back to teams | Enforced at registration since 2026-08-23, and no longer an unenforced invariant. Before that an operator could register the duplicate in the morning and discover at the finalist round that it would not run `[observed]` |
 | **`submissions.status` follows recording → transcribing → scoring → speaking → complete, or error** | the UI's view of what is judged, `completed_count`, the finalist round's eligibility filter | No column constraint and no transition check. Any status can be written at any time `[observed]` |
 | **A rubric's categories do not change after submissions are scored against it** | the CSV's fixed column set, the leaderboard, `_overall_score` | Rubrics sync by name, so editing a rubric file creates a second rubric rather than mutating the first. The first is never re-pointed `[observed]` |
 | **`audio_path` on a submission points at a file that exists, at the absolute path recorded when it was written** | transcription, the export bundle, the `/audio` mount | Deleting files by hand leaves the row and transcription fails with "Audio file not found". Because the path is absolute, moving the project directory or restoring onto another machine breaks every reference even with the audio present `[observed]` |
@@ -240,6 +240,9 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R39 | A rubric is immutable once loaded. Sync is keyed on name and only inserts, so editing a rubric file produces a second rubric and leaves every scored event on the one it was judged against | observed | `rubrics.sync_rubrics_to_db` | `TestRubricsAreImmutableOnceLoaded` |
+| R38 | Team names are distinct within an event, checked at registration, matched the same way the finalist round matches them | observed | `api_create_submission` | `TestTeamNamesAreUniqueWithinAnEvent` |
+| R37 | A finalist round needs at least three completed submissions, because the podium it produces is three | observed | `api_run_finalist`, `llm.run_finalist_round` | `TestThePodiumSetsTheMinimum` |
 | R36 | The product is unauthenticated by design and assumes a trusted network. `npm run dev` binds localhost; `npm run start` binds `0.0.0.0` and is an explicit, separate opt-in to exposing the event to the local network | observed | `package.json`, README | `TestTheNetworkPosture` |
 | R35 | A submission moves `recording → transcribing → scoring → speaking → complete`. `error` is reachable from any stage and is not terminal: a retry re-enters at `transcribing` | observed | `api_judge_submission` | `TestTheStatusSequence` |
 | R34 | A submission's status is one of the six the system defines. Which transitions between them are legal is undecided | observed | `db.SUBMISSION_STATUSES` | `TestStatusIsOneOfOurs` |
@@ -248,8 +251,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Thirty-five of thirty-six are observed and one rests only on the README.
-Thirty-five carry a test. The one without, R19, is a process instruction to
+Thirty-eight of thirty-nine are observed and one rests only on the README.
+Thirty-eight carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each

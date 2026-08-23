@@ -22,8 +22,7 @@ reading the code will never tell you which.
 Ordered by what the answer changes, not by where it was found. The first four
 are a call agenda. The rest is the backlog.
 
-**Where this stands.** Two of the seventeen are closed, and one is half
-closed, because the answer turned out to be already in the design rather than
+**Where this stands.** Six of the seventeen are closed and one is half closed, because the answer turned out to be already in the design rather than
 in someone's head. Those are marked. The rest split into two kinds, and the
 difference matters:
 
@@ -106,12 +105,12 @@ Q5. Why three retries, and why exponential backoff from two seconds?
    Ask:      Pat
 
 Q6. Why must a finalist round have at least three completed submissions?
-   Found:    `server.py:813`
-   Behaviour: Fewer than three is a 400 `[observed]`. The prompt also hardcodes
-             a top three
-   Depends:  Whether a two-team event is out of scope or merely unimplemented,
-             and whether podium size should follow team count
-   Ask:      Pat
+   Status:   **Closed.** R37. It was never arbitrary: the prompt asks for a top
+             three, so a round needs three teams to fill it. The minimum
+             follows from the podium
+   Remains:  Whether the podium should shrink for a two-team event, which is a
+             feature rather than an unexplained constant
+   Ask:      Pat, only if you want that feature
 
 Q7. How much of each pitch should the finalist round read?
    Found:    `judge/llm.py`, `FINALIST_TRANSCRIPT_CHARS`
@@ -130,13 +129,15 @@ Q8. What is the upload ceiling protecting against, and is 100 MB the right numbe
    Ask:      Pat
 
 Q9. Should two teams in one event be allowed the same name?
-   Found:    `db.create_submission`, no uniqueness on `(event_id, team_name)`
-   Behaviour: Allowed by the schema `[observed]`. Export filenames de-duplicate
-             with a numeric suffix, but the finalist round refuses a duplicate
-             name, so such an event cannot complete a finalist round
-   Depends:  Whether to reject the name at entry or to carry an internal
-             identity through the pipeline instead of matching on the name
-   Ask:      Pat
+   Status:   **Closed.** R38. No, and the system already required it: the
+             finalist round refuses to place the same team twice. It was
+             enforced at the wrong end, so an operator could register the
+             duplicate in the morning and find out at the finalist round, with
+             the room assembled, that it would not run. Checked at registration
+             now, matched the way the finalist round matches
+   Remains:  Nothing, unless you would rather carry an internal identity
+             through the pipeline and allow the duplicate name
+   Ask:      Pat, only to overturn it
 
 Q10. Are the default models a decision or a snapshot?
    Found:    `judge/openrouter.py`, `DEFAULT_SCORING_MODEL`, `DEFAULT_TRANSCRIPTION_MODEL`
@@ -148,14 +149,12 @@ Q10. Are the default models a decision or a snapshot?
    Ask:      Pat
 
 Q11. Should editing a rubric change how already-judged teams were scored?
-   Found:    `judge/rubrics.py`, sync is keyed on `name`
-   Behaviour: Editing a rubric file creates a second rubric rather than mutating
-             the first, and existing events keep pointing at the old one
-             `[observed]`. The README documents this as a gotcha
-   Depends:  Whether the current behaviour is the intended immutability
-             guarantee, in which case it should be stated as one, or an accident
-             that reads like a bug
-   Ask:      Pat
+   Status:   **Closed.** R39. No, and the behaviour is the guarantee rather
+             than the accident. Sync only inserts, so a rubric an event was
+             judged against can never change underneath it. It read as a gotcha
+             because nothing said it was deliberate. It is stated and tested now
+   Remains:  Nothing
+   Ask:      Pat, only to overturn it
 
 Q12. Should an event with no rubric named really take the most recent one?
    Found:    `rubrics.get_default_rubric_id`, `db.list_rubrics` orders `created_at DESC`
@@ -182,13 +181,11 @@ Q14. Should `exports/` ever be cleaned up?
    Ask:      Pat
 
 Q15. Is serving every recording from an open static mount intended?
-   Found:    `server.py:92`, `app.mount("/audio", ...)`
-   Behaviour: The whole directory is served, so any caller who knows a submission
-             id gets that team's pitch `[observed]`. The UI needs playback, which
-             is presumably why
-   Depends:  Whether playback should go through a route that at least checks the
-             submission exists and belongs to the current event. Related to Q1
-   Ask:      Pat
+   Status:   **Closed.** R33. The mount is gone. Audio is served by a route
+             that admits only the four names this system writes, and only for a
+             record that still exists
+   Remains:  The route is still unauthenticated, which is Q1 and not this
+   Ask:      Pat, under Q1
 
 Q16. What should happen when a provider is down mid-event?
    Found:    `judge/retry.py` covers a transient failure; nothing covers a sustained one
