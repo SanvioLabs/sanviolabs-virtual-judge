@@ -8,8 +8,8 @@ pitched.
 
 import pytest
 
-from server import _reconcile_top_picks
 from judge import llm
+from server import _reconcile_top_picks
 
 
 def completed(*names):

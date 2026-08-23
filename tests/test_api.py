@@ -3,14 +3,13 @@
 import csv
 import io
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 import server
 from judge import db
-
 
 # --- Fixtures ---
 
@@ -878,14 +877,14 @@ class TestTheCsvIsSafeToOpen:
 
     async def test_a_formula_is_neutralised(self, client):
         rows = await self._event_with_team(client, "=cmd|'/c calc'!A1")
-        cell = [r[0] for r in rows if r and "cmd" in r[0]][0]
+        cell = next(r[0] for r in rows if r and "cmd" in r[0])
         assert cell.startswith("'")
         assert not cell.startswith("=")
 
     @pytest.mark.parametrize("leader", ["=", "+", "-", "@"])
     async def test_every_formula_leader_is_covered(self, client, leader):
         rows = await self._event_with_team(client, f"{leader}SUM(A1:A9)")
-        cell = [r[0] for r in rows if r and "SUM" in r[0]][0]
+        cell = next(r[0] for r in rows if r and "SUM" in r[0])
         assert cell.startswith("'")
 
     async def test_an_ordinary_name_is_left_alone(self, client):
@@ -895,7 +894,7 @@ class TestTheCsvIsSafeToOpen:
     async def test_the_name_is_still_readable(self, client):
         # Neutralised, not censored. The organiser still sees what was typed.
         rows = await self._event_with_team(client, "=Weird Name")
-        cell = [r[0] for r in rows if r and "Weird" in r[0]][0]
+        cell = next(r[0] for r in rows if r and "Weird" in r[0])
         assert cell == "'=Weird Name"
 
 

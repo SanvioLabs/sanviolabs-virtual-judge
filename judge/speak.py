@@ -36,7 +36,6 @@ def speak(text: str, output_path: str | Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_path, "wb") as f:
-        for chunk in audio_generator:
-            f.write(chunk)
+        f.writelines(audio_generator)
 
     return output_path

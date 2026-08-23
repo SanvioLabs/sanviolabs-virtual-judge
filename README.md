@@ -143,6 +143,8 @@ This binds to `0.0.0.0:8000` — share your local IP (e.g., `http://192.168.1.42
 |---------|-------------|
 | `npm run dev` | Start with hot-reload (development) |
 | `npm run start` | Start on all interfaces (event/LAN mode) |
+| `npm run lint` | Lint with ruff |
+| `npm run lint:fix` | Lint and apply the safe fixes |
 | `npm run test` | Run unit/API test suite (pytest) |
 | `npm run test:e2e` | Run Playwright browser tests |
 | `npm run test:e2e:headed` | Run E2E tests with visible browser |

@@ -1,9 +1,10 @@
 """Load rubrics from YAML files."""
 
-import yaml
 from pathlib import Path
-from . import db
 
+import yaml
+
+from . import db
 
 RUBRICS_DIR = Path(__file__).parent.parent / "rubrics"
 

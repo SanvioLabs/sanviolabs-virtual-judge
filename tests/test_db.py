@@ -1,6 +1,5 @@
 """Tests for the database and rubric modules."""
 
-import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import patch
@@ -312,9 +311,8 @@ class TestConnectionsAlwaysClose:
             conn.execute("SELECT 1")
 
     def test_the_context_manager_closes_when_the_body_raises(self):
-        with pytest.raises(RuntimeError):
-            with db.connection() as conn:
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError), db.connection() as conn:
+            raise RuntimeError("boom")
         with pytest.raises(sqlite3.ProgrammingError):
             conn.execute("SELECT 1")
 

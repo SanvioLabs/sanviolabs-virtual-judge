@@ -9,13 +9,13 @@ Returns deterministic responses based on the test fixtures.
 """
 
 import asyncio
-from pathlib import Path
 
 # Import fixtures from tests
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "tests"))
-from fixtures.pitches import TEAMS, MOCK_FINALIST_RESULT
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "tests"))
+from fixtures.pitches import MOCK_FINALIST_RESULT, TEAMS
 
 # Track which submission maps to which team (set by the mock transcriber)
 _submission_team_map: dict[str, str] = {}
@@ -64,15 +64,11 @@ def mock_score_submission(transcript: str, rubric: dict) -> dict:
     """Return canned scores based on which transcript this matches."""
     for team_name, data in TEAMS.items():
         # Match on a distinctive phrase from each pitch
-        if team_name == "NovaMind" and "MedScribe" in transcript:
-            return data["scores"]
-        elif team_name == "ContextCraft" and "ThreadWeaver" in transcript:
-            return data["scores"]
-        elif team_name == "YOLOship" and "VibeCoder" in transcript:
+        if (team_name == "NovaMind" and "MedScribe" in transcript) or (team_name == "ContextCraft" and "ThreadWeaver" in transcript) or (team_name == "YOLOship" and "VibeCoder" in transcript):
             return data["scores"]
 
     # Fallback — return the first team's scores
-    return list(TEAMS.values())[0]["scores"]
+    return next(iter(TEAMS.values()))["scores"]
 
 
 def mock_speak(text: str, output_path: str | Path) -> Path:
@@ -96,8 +92,9 @@ def mock_speak(text: str, output_path: str | Path) -> Path:
 
 def _edge_tts_generate(text: str, output_path: Path, voice: str = "en-US-GuyNeural", max_chars: int = 5000):
     """Generate real speech via edge-tts in a background thread."""
-    import edge_tts
     import threading
+
+    import edge_tts
 
     tts_text = text[:max_chars]
     if len(text) > max_chars:

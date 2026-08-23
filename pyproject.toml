@@ -18,6 +18,7 @@ dev = [
     "pytest==8.3.5",
     "pytest-asyncio==0.25.3",
     "httpx==0.28.1",
+    "ruff>=0.16.4",
 ]
 
 [tool.pytest.ini_options]
@@ -27,3 +28,26 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 filterwarnings = ["error::DeprecationWarning"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "DTZ", "RUF", "FURB", "PLW"]
+ignore = [
+    # The judge talks to two third-party APIs whose failure modes are open
+    # ended. Catching broadly and reporting the message is deliberate: the
+    # operator needs to see what went wrong, not a traceback.
+    "BLE001",
+    # Long single-line SQL and prompt strings read better unwrapped.
+    "E501",
+    # The export builders are lists of f-strings, some interpolating and some
+    # not. Making every literal line a bare string reads worse than the
+    # uniform block it sits in.
+    "F541", "ISC004",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on shapes and hold fixture constants at class scope.
+"tests/*" = ["RUF012"]

@@ -13,10 +13,10 @@ import os
 import re
 
 from openai import (
-    OpenAI,
     APIConnectionError,
     APITimeoutError,
     InternalServerError,
+    OpenAI,
     RateLimitError,
 )
 

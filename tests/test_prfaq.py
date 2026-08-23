@@ -4,12 +4,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 import server
 from judge import db, prfaq
 from judge.mock_externals import mock_generate_prfaq
-
 
 # --- Fixtures ---
 
@@ -546,7 +545,7 @@ class TestGradeTallyAlwaysAddsUp:
         ]}
         md = prfaq.render_markdown(content, "NovaMind")
         import re
-        vals = {k: int(v) for k, v in re.findall(r"^assumptions_(\w+): (\d+)$", md, re.M)}
+        vals = {k: int(v) for k, v in re.findall(r"^assumptions_(\w+): (\d+)$", md, re.MULTILINE)}
         assert vals["total"] == vals["untested"] + vals["partly_tested"] + vals["tested"]
 
     def test_the_body_shows_the_grade_it_was_counted_as(self):

@@ -47,7 +47,7 @@ class TestEncodeAudio:
 
         with patch("judge.transcribe.shutil.which", return_value="/usr/local/bin/ffmpeg"), \
              patch("judge.transcribe.subprocess.run", side_effect=fake_ffmpeg):
-            data, fmt = _encode_audio(webm)
+            _data, fmt = _encode_audio(webm)
 
         assert fmt == "mp3"
         # The converted file is kept so the export bundle has playable pitch audio.
@@ -56,8 +56,8 @@ class TestEncodeAudio:
     def test_missing_ffmpeg_gives_actionable_error(self, tmp_path):
         webm = tmp_path / "pitch.webm"
         webm.write_bytes(b"\x00" * 5000)
-        with patch("judge.transcribe.shutil.which", return_value=None):
-            with pytest.raises(RuntimeError, match="ffmpeg is required"):
+        with patch("judge.transcribe.shutil.which", return_value=None), \
+             pytest.raises(RuntimeError, match="ffmpeg is required"):
                 _encode_audio(webm)
 
     def test_missing_file_raises(self, tmp_path):

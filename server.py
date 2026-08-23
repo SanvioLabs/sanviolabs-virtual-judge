@@ -1,46 +1,58 @@
 """Virtual Judge — FastAPI server."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import re
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, HTTPException
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from judge import db, openrouter
-from judge.rubrics import sync_rubrics_to_db, get_default_rubric_id
+from judge.rubrics import get_default_rubric_id, sync_rubrics_to_db
 
 # Mock mode: when MOCK_EXTERNALS=true, use canned responses instead of real API calls.
 # This enables full E2E testing without API keys or network access.
 if os.environ.get("MOCK_EXTERNALS", "").lower() in ("true", "1", "yes"):
     from judge.mock_externals import (
-        mock_transcribe_audio as transcribe_audio,
-        mock_score_submission as score_submission,
-        mock_speak as speak,
-        mock_run_finalist_round as run_finalist_round,
         mock_generate_prfaq as generate_prfaq,
     )
+    from judge.mock_externals import (
+        mock_run_finalist_round as run_finalist_round,
+    )
+    from judge.mock_externals import (
+        mock_score_submission as score_submission,
+    )
+    from judge.mock_externals import (
+        mock_speak as speak,
+    )
+    from judge.mock_externals import (
+        mock_transcribe_audio as transcribe_audio,
+    )
 else:
-    from judge.transcribe import transcribe_audio
-    from judge.llm import score_submission, run_finalist_round
-    from judge.speak import speak
+    from judge.llm import run_finalist_round, score_submission
     from judge.prfaq import generate_prfaq
+    from judge.speak import speak
+    from judge.transcribe import transcribe_audio
 
 # Rendering is deterministic either way — the disclaimer and provenance blocks are
 # written in Python, so mock mode exercises the same document the event produces.
-from judge.prfaq import prfaq_model, render_markdown as render_prfaq_markdown
+from datetime import UTC
+
+from judge.prfaq import prfaq_model
+from judge.prfaq import render_markdown as render_prfaq_markdown
 
 # Load .env file if present
 _env_path = Path(__file__).parent / ".env"
 if _env_path.exists():
-    for line in _env_path.read_text().splitlines():
-        line = line.strip()
+    for raw_line in _env_path.read_text().splitlines():
+        line = raw_line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, _, value = line.partition("=")
             key = key.strip()
@@ -142,6 +154,26 @@ def _norm_category(name: str) -> str:
     """Fold a category name for matching. The model retypes the name rather than
     echoing an id, so case and spacing drift."""
     return " ".join(str(name or "").split()).lower()
+
+
+def _write_upload(source, dest: Path, limit: int) -> int:
+    """Copy an upload to disk, refusing to go past `limit`.
+
+    Runs on a worker thread. `source` is the synchronous file object behind the
+    UploadFile, so the read and the write both stay off the event loop.
+
+    Raises ValueError once the limit is passed, without having buffered the
+    whole body first, which is the point of streaming it.
+    """
+    source.seek(0)
+    written = 0
+    with open(dest, "wb") as out:
+        while chunk := source.read(1024 * 1024):
+            written += len(chunk)
+            if written > limit:
+                raise ValueError("upload exceeds the limit")
+            out.write(chunk)
+    return written
 
 
 def _unique_slugs(submissions: list[dict]) -> dict[str, str]:
@@ -358,7 +390,7 @@ async def api_delete_submission(sub_id: str):
     try:
         audio_paths = db.delete_submission(sub_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="Submission not found")
+        raise HTTPException(status_code=404, detail="Submission not found") from None
 
     removed = _remove_audio_files(audio_paths, AUDIO_DIR / f"{sub_id}_review.mp3")
     return {"deleted": sub_id, "audio_files_removed": removed}
@@ -373,7 +405,7 @@ async def api_delete_event(event_id: str):
     try:
         audio_paths = db.delete_event(event_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise HTTPException(status_code=404, detail="Event not found") from None
 
     removed = _remove_audio_files(audio_paths, AUDIO_DIR / f"finalist_{event_id[:8]}.mp3")
     return {"deleted": event_id, "audio_files_removed": removed}
@@ -414,21 +446,21 @@ async def api_upload_audio(sub_id: str, file: UploadFile):
     # Streamed with a ceiling rather than read whole. A pitch is a couple of
     # megabytes; the previous read() pulled whatever arrived into memory before
     # anything looked at its size.
+    #
+    # The copy runs on a worker thread. open() and write() are blocking, and
+    # doing them here would hold the event loop for the length of the upload,
+    # which is the same fault the judging pipeline had.
     audio_path = AUDIO_DIR / f"{sub_id}.webm"
-    written = 0
     try:
-        with open(audio_path, "wb") as f:
-            while chunk := await file.read(1024 * 1024):
-                written += len(chunk)
-                if written > MAX_UPLOAD_BYTES:
-                    raise ValueError("too large")
-                f.write(chunk)
+        written = await asyncio.to_thread(
+            _write_upload, file.file, audio_path, MAX_UPLOAD_BYTES
+        )
     except ValueError:
         audio_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=413,
             detail=f"Recording is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
-        )
+        ) from None
 
     if written == 0:
         audio_path.unlink(missing_ok=True)
@@ -465,10 +497,10 @@ async def api_judge_submission(sub_id: str):
         transcript = await asyncio.to_thread(transcribe_audio, submission["audio_path"])
     except KeyError:
         db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file")
+        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file") from None
     except Exception as e:
         db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}") from e
 
     db.update_submission(sub_id, transcript=transcript, status="scoring")
 
@@ -477,10 +509,10 @@ async def api_judge_submission(sub_id: str):
         result = await asyncio.to_thread(score_submission, transcript, rubric)
     except KeyError:
         db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file")
+        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file") from None
     except Exception as e:
         db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail=f"Scoring failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Scoring failed: {e}") from e
 
     db.save_scores(sub_id, result["scores"])
 
@@ -489,7 +521,7 @@ async def api_judge_submission(sub_id: str):
         overall, unmatched_categories = _overall_score(result["scores"], rubric)
     except ValueError as e:
         db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     if unmatched_categories:
         logger.warning(
             "Submission %s: judge returned categories not in the rubric, excluded from the "
@@ -512,10 +544,10 @@ async def api_judge_submission(sub_id: str):
         await asyncio.to_thread(speak, review_text, audio_out)
     except KeyError:
         db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured — check your .env file")
+        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured — check your .env file") from None
     except Exception as e:
         db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail=f"Text-to-speech failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Text-to-speech failed: {e}") from e
 
     # Save review
     db.save_review(sub_id, overall, result["summary"], str(audio_out), review_text)
@@ -580,9 +612,9 @@ def _build_prfaq(sub: dict, event: dict) -> dict:
     try:
         content = generate_prfaq(sub["team_name"], sub["transcript"], event["name"] if event else "")
     except KeyError:
-        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file")
+        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file") from None
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PRFAQ generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"PRFAQ generation failed: {e}") from e
 
     model = prfaq_model()
     markdown = render_prfaq_markdown(
@@ -628,8 +660,8 @@ async def api_generate_prfaq(sub_id: str, force: bool = False):
         # Timeout: 120 seconds (2 minutes)
         result = await asyncio.wait_for(asyncio.to_thread(_build_prfaq, sub, event), timeout=120)
         return {**result, "cached": False}
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="PRFAQ generation timed out (>120s) — try again")
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="PRFAQ generation timed out (>120s) — try again") from None
 
 
 @app.get("/api/submissions/{sub_id}/prfaq")
@@ -707,7 +739,7 @@ async def api_generate_event_prfaqs(event_id: str, force: bool = False):
                 generated.append(s["team_name"])
             except HTTPException as ex:
                 failed.append({"team_name": s["team_name"], "reason": ex.detail})
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 failed.append({"team_name": s["team_name"], "reason": "timeout (took >120s)"})
             except Exception as ex:
                 failed.append({"team_name": s["team_name"], "reason": str(ex)})
@@ -719,10 +751,10 @@ async def api_generate_event_prfaqs(event_id: str, force: bool = False):
     if tasks:
         for i in range(0, len(tasks), 3):
             chunk = tasks[i:i+3]
-            try:
+            # Individual timeouts are already caught above, and the
+            # response names who failed, so an overrunning batch is not fatal.
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(asyncio.gather(*chunk), timeout=300)
-            except asyncio.TimeoutError:
-                pass  # Individual timeouts are already caught above
 
     return {"generated": generated, "skipped": skipped, "failed": failed}
 
@@ -800,7 +832,7 @@ async def api_run_finalist(event_id: str):
     try:
         result["top_picks"] = _reconcile_top_picks(result.get("top_picks") or [], completed)
     except ValueError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
     # Generate spoken announcement
     announce_text = _format_finalist_for_speech(result)
@@ -956,8 +988,8 @@ async def api_export_bundle(event_id: str):
 
     Returns the folder path so you can AirDrop, USB copy, or share via Finder.
     """
-    from datetime import datetime
     import shutil
+    from datetime import datetime
 
     event = db.get_event(event_id)
     if not event:
@@ -969,7 +1001,7 @@ async def api_export_bundle(event_id: str):
 
     # Create export folder
     safe_name = _safe_component(event["name"], "event")
-    date_stamp = datetime.now().strftime("%Y%m%d")
+    date_stamp = datetime.now(UTC).astimezone().strftime("%Y%m%d")
     export_dir = Path(__file__).parent / "exports" / f"{safe_name}_{date_stamp}"
     export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -977,7 +1009,7 @@ async def api_export_bundle(event_id: str):
     readme_lines = [
         f"# {event['name']} — Judgement Results",
         f"",
-        f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"Exported: {datetime.now(UTC).astimezone().strftime('%Y-%m-%d %H:%M')}",
         f"Rubric: {rubric['name']}",
         f"Scale: {rubric['scale_min']}-{rubric['scale_max']}",
         f"Teams: {len(submissions)}",
@@ -1029,7 +1061,7 @@ async def api_export_bundle(event_id: str):
     export_data = {
         "event": event["name"],
         "description": event["description"],
-        "exported_at": datetime.now().isoformat(),
+        "exported_at": datetime.now(UTC).astimezone().isoformat(),
         "rubric": {
             "name": rubric["name"],
             "categories": rubric["categories"],
@@ -1258,7 +1290,7 @@ def _trim_for_speech(
 
     kept = [sentences[0]]
     for sentence in sentences[1:max_sentences]:
-        if len(" ".join(kept + [sentence]).split()) > max_words:
+        if len(" ".join([*kept, sentence]).split()) > max_words:
             break
         kept.append(sentence)
 
@@ -1352,10 +1384,6 @@ def _format_finalist_for_speech(result: dict) -> str:
 
 
 def _ordinal(n: int) -> str:
-    if n == 1:
-        return "first"
-    elif n == 2:
-        return "second"
-    elif n == 3:
-        return "third"
-    return f"{n}th"
+    """Spoken ordinals for the podium. The announcement never goes past third,
+    so the numeral is the honest fallback rather than a guess at "fourth"."""
+    return {1: "first", 2: "second", 3: "third"}.get(n, f"number {n}")

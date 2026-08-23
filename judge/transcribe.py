@@ -46,6 +46,9 @@ def _convert_to_mp3(audio_path: Path) -> Path:
         ],
         capture_output=True,
         text=True,
+        # The return code is inspected below, with ffmpeg's own stderr, which
+        # says more than a CalledProcessError would.
+        check=False,
     )
     if result.returncode != 0 or not out_path.exists():
         raise RuntimeError(f"Audio conversion failed: {result.stderr.strip()[:300]}")

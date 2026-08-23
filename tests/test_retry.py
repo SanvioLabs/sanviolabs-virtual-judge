@@ -1,7 +1,7 @@
 """Tests for the retry utility."""
 
+
 import pytest
-from unittest.mock import patch
 
 from judge.retry import retry
 

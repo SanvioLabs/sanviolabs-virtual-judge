@@ -1,12 +1,9 @@
 """Tests for the LLM judge module."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from judge.llm import score_submission, run_finalist_round
-
+from judge.llm import run_finalist_round, score_submission
 
 MOCK_RUBRIC = {
     "name": "Test",

@@ -1,15 +1,13 @@
 """SQLite database for Virtual Judge."""
 
+import json
 import os
 import sqlite3
-import json
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
-
 
 # Overridable so a test run does not write into the event database sitting in
 # the project root. The Playwright suite starts a real server, and without this
@@ -218,7 +216,7 @@ def _migrate_event_id(conn):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _id() -> str:
@@ -239,7 +237,7 @@ def create_event(name: str, rubric_id: str, description: str = "") -> str:
         return event_id
 
 
-def get_event(event_id: str) -> Optional[dict]:
+def get_event(event_id: str) -> dict | None:
     """Get an event by ID."""
     with connection() as conn:
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
@@ -297,7 +295,7 @@ def create_rubric(name: str, categories: list[dict], scale_min: int = 1,
         return rubric_id
 
 
-def get_rubric(rubric_id: str) -> Optional[dict]:
+def get_rubric(rubric_id: str) -> dict | None:
     """Get a rubric by ID."""
     with connection() as conn:
         row = conn.execute("SELECT * FROM rubrics WHERE id = ?", (rubric_id,)).fetchone()
@@ -432,14 +430,14 @@ def update_submission(sub_id: str, **kwargs):
         conn.commit()
 
 
-def get_submission(sub_id: str) -> Optional[dict]:
+def get_submission(sub_id: str) -> dict | None:
     """Get a submission by ID."""
     with connection() as conn:
         row = conn.execute("SELECT * FROM submissions WHERE id = ?", (sub_id,)).fetchone()
         return dict(row) if row else None
 
 
-def list_submissions(event_id: Optional[str] = None, rubric_id: Optional[str] = None) -> list[dict]:
+def list_submissions(event_id: str | None = None, rubric_id: str | None = None) -> list[dict]:
     """List submissions, optionally filtered by event or rubric."""
     with connection() as conn:
         if event_id:
@@ -489,7 +487,7 @@ def save_review(submission_id: str, overall_score: float, summary: str, audio_pa
         return review_id
 
 
-def get_review(submission_id: str) -> Optional[dict]:
+def get_review(submission_id: str) -> dict | None:
     """Get the review for a submission."""
     with connection() as conn:
         row = conn.execute("SELECT * FROM reviews WHERE submission_id = ?", (submission_id,)).fetchone()
@@ -515,7 +513,7 @@ def save_prfaq(submission_id: str, content: dict, markdown: str, model: str = ""
         return prfaq_id
 
 
-def get_prfaq(submission_id: str) -> Optional[dict]:
+def get_prfaq(submission_id: str) -> dict | None:
     """Get the PRFAQ for a submission."""
     with connection() as conn:
         row = conn.execute("SELECT * FROM prfaqs WHERE submission_id = ?", (submission_id,)).fetchone()
@@ -540,7 +538,7 @@ def save_finalist_run(event_id: str, rubric_id: str, top_picks: list[dict], reas
         return run_id
 
 
-def get_latest_finalist_run(event_id: str) -> Optional[dict]:
+def get_latest_finalist_run(event_id: str) -> dict | None:
     """Get the most recent finalist run for an event."""
     with connection() as conn:
         row = conn.execute(

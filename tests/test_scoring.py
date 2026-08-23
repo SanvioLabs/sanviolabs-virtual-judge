@@ -7,7 +7,7 @@ line up exactly with the rubric. Both of those produced a wrong number silently.
 
 import pytest
 
-from server import _overall_score, _norm_category
+from server import _norm_category, _overall_score
 
 
 def rubric(*pairs):
