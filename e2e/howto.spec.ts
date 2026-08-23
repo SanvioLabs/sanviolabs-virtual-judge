@@ -27,7 +27,10 @@ test.describe("How to use", () => {
 
   test("it covers the whole run, not just recording", async ({ page }) => {
     await page.locator("#btn-howto").click();
-    const body = page.locator(".modal-body");
+    // Scoped to this modal. There is more than one on the page now, and an
+    // unscoped .modal-body is a strict mode violation the moment another
+    // appears, which is what the access code gate did.
+    const body = page.locator("#howto-overlay .modal-body");
     for (const heading of [
       "Before the first team",
       "For each team",
