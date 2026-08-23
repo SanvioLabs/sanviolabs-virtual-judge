@@ -240,14 +240,16 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R36 | The product is unauthenticated by design and assumes a trusted network. `npm run dev` binds localhost; `npm run start` binds `0.0.0.0` and is an explicit, separate opt-in to exposing the event to the local network | observed | `package.json`, README | `TestTheNetworkPosture` |
+| R35 | A submission moves `recording → transcribing → scoring → speaking → complete`. `error` is reachable from any stage and is not terminal: a retry re-enters at `transcribing` | observed | `api_judge_submission` | `TestTheStatusSequence` |
 | R34 | A submission's status is one of the six the system defines. Which transitions between them are legal is undecided | observed | `db.SUBMISSION_STATUSES` | `TestStatusIsOneOfOurs` |
 | R33 | Audio is served only under the four names the system writes, and only for a submission or event that still exists. Nothing else in `audio_recordings/` is reachable | observed | `api_audio` | `TestAudioIsServedOnlyForRecordsThatExist` |
 | R32 | A rubric's `judge_persona` sets tone, emphasis and what the judge values. The **shape** of the spoken review, its length, how many improvements it names and how it closes, is fixed by the product prompt and is not a rubric's to set | observed | `judge/llm.py`, `rubrics/example-hackathon.yaml` | `TestTheRubricDoesNotFightThePrompt` |
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Thirty-three of thirty-four are observed and one rests only on the README.
-Thirty-three carry a test. The one without, R19, is a process instruction to
+Thirty-five of thirty-six are observed and one rests only on the README.
+Thirty-five carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
@@ -302,7 +304,7 @@ follows is what is left.
 | **A recording is still served to anyone who can reach the port**, now only for a submission that exists. The directory-wide exposure is gone; the missing authentication is not, and is Q1 | `api_audio` | observed |
 | **`exports/` still accumulates.** Nothing expires it; `npm run exports:clean` removes them by hand and the README says so. Whether the product should own that lifecycle is Q14 | `api_export_bundle` | observed |
 | **`api_list_event_submissions` issues three queries per submission.** Measured against the largest real event, 15 teams and 46 queries, at 85ms. It is called on a tab switch and not on the live judging path. Left alone deliberately: no requirement constrains it, and grouping the queries would be code no test justifies | measured 2026-08-23 | observed |
-| **The order of statuses is still unchecked.** The value is now constrained to the six the system defines, but nothing stops `complete` being written before a transcript exists. The legal transitions are Q3's territory | `db.update_submission` | observed |
+| **The order of statuses is held by a test, not by the database.** R35 pins the sequence the pipeline produces. `update_submission` will still accept any of the six in any order, which is deliberate: the pipeline is the only production writer, so a check there would buy nothing and would make every test that arranges state walk five steps | `db.update_submission` | observed |
 
 ---
 

@@ -92,3 +92,34 @@ class TestAudioEncoding:
         source = inspect.getsource(transcribe._convert_to_mp3)
         for flag in ("-ac", "1", "-ar", "16000", "-b:a", "48k"):
             assert f'"{flag}"' in source, flag
+
+
+class TestTheNetworkPosture:
+    """SPEC.md R36. Unauthenticated by design, on a trusted network, with LAN
+    exposure as a separate deliberate command. Whether it should stay that way
+    is Q1 and is a product question, not a defect."""
+
+    def _scripts(self):
+        import json
+        from pathlib import Path
+        return json.loads((Path(__file__).parent.parent / "package.json").read_text())["scripts"]
+
+    def test_the_development_server_does_not_bind_the_network(self):
+        assert "--host" not in self._scripts()["dev"]
+
+    def test_exposing_it_is_a_separate_command(self):
+        assert "--host 0.0.0.0" in self._scripts()["start"]
+
+    def test_the_readme_says_there_is_no_authentication(self):
+        from pathlib import Path
+        readme = (Path(__file__).parent.parent / "README.md").read_text()
+        assert "There is no authentication" in readme
+
+    def test_the_readme_says_what_leaves_the_machine(self):
+        """An operator running this on real participants needs to know their
+        voices go to two third parties before they press record."""
+        from pathlib import Path
+        readme = (Path(__file__).parent.parent / "README.md").read_text()
+        assert "What leaves your machine" in readme
+        assert "OpenRouter" in readme and "ElevenLabs" in readme
+        assert "no consent step" in readme

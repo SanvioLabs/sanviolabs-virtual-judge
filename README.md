@@ -143,6 +143,22 @@ npm run start
 
 This binds to `0.0.0.0:8000` — share your local IP (e.g., `http://192.168.1.42:8000`).
 
+### What leaves your machine
+
+Before you run this on real people, know where their voices go. Per pitch:
+
+| Sent to | What |
+|---|---|
+| **OpenRouter** | The recording itself, as MP3, for transcription |
+| **OpenRouter** | The transcript, again, for scoring and later for the PRFAQ |
+| **ElevenLabs** | The review text, to be spoken |
+
+Nothing else leaves. The scores, the reviews and the database stay on the
+machine. The product has no consent step and no expiry: recordings, transcripts
+and export bundles sit on disk until you delete them, with `npm run reset` or by
+deleting an event in the UI. Telling teams their pitch is recorded and judged by
+AI is the organiser's job, and this tool does not do it for you.
+
 > **There is no authentication.** Every route is open to anyone who can reach the
 > port. On `npm run start` that is everyone on the same network, and they can read
 > every transcript, review and PRFAQ, and create submissions of their own. Run it

@@ -22,34 +22,50 @@ reading the code will never tell you which.
 Ordered by what the answer changes, not by where it was found. The first four
 are a call agenda. The rest is the backlog.
 
-**Pinned, not answered.** `tests/test_tunables.py` holds every value below to
-what it currently is, so changing one is a deliberate act with a test to
-update rather than a drift nobody notices until a room is waiting. That is a
-guard against accident. It is not an answer, and none of these close until
-somebody says why the number is the number.
+**Where this stands.** Two of the seventeen are closed, and one is half
+closed, because the answer turned out to be already in the design rather than
+in someone's head. Those are marked. The rest split into two kinds, and the
+difference matters:
+
+- **Choices about what the product should be.** Q1 on authentication and the
+  remaining half of Q2 on expiry. These are decisions, not defects. The current
+  posture for each is now stated as a requirement with a test, so the system is
+  no longer silently undecided; what remains is whether to change it.
+- **Rationales nobody recorded.** Q5 through Q17, mostly of the form "why is
+  this number three". These cannot be answered by reading anything. Writing a
+  plausible reason next to `max_attempts=3` would destroy the only signal that
+  line carries, which is that nobody knows.
+
+**Pinned, not answered.** `tests/test_tunables.py` holds every value in the
+second group to what it currently is, so changing one is a deliberate act with
+a test to update rather than a drift nobody notices until a room is waiting.
+That is a guard against accident. It is not an answer.
 
 ---
 
-Q1. Is unauthenticated access from the local network a requirement or an accident?
-   Found:    `package.json` `start` script, every route in `server.py`
-   Behaviour: `npm run start` binds `0.0.0.0` and no route authenticates, so
-             anyone on the event WiFi can read every transcript and PRFAQ,
-             create submissions, and delete an entire event. The README
-             documents the binding and now warns about it `[observed]`
-   Depends:  Whether the next change is a shared secret and a login, or a
-             sentence in the README saying this is for a trusted network only.
-             It also decides whether `DELETE` should exist on an open port at all
+Q1. Should the product gain authentication?
+   Status:   **Narrowed.** The current posture is no longer undecided: R36
+             states it. Unauthenticated by design, trusted network assumed,
+             `dev` on localhost, `start` an explicit opt-in to LAN exposure,
+             and the README warns in as many words. That is now a requirement
+             with a test rather than an accident nobody had named.
+   Found:    `package.json`, R36
+   Remains:  Whether to add a shared secret or an access code, which would let
+             the tool run on a conference network rather than a trusted one.
+             That is a feature decision, not a defect. Today anyone who can
+             reach the port can read every transcript and delete an event
    Ask:      Pat
 
-Q2. What is the retention requirement for participant voice recordings?
-   Found:    `audio_recordings/`, `judge.db`, `exports/`
-   Behaviour: Nothing expires. Recordings, transcripts, reviews and export
-             bundles persist until someone deletes an event by hand. The pitch
-             audio and the transcript also leave the machine to OpenRouter, and
-             the review text to ElevenLabs `[observed]`
-   Depends:  Whether the product needs a retention setting and a purge command,
-             and whether the README needs to state what leaves the machine
-             before an organiser runs it on real participants
+Q2. Should the product hold participant recordings to a retention rule?
+   Status:   **Half closed.** The disclosure half is done: the README now names
+             exactly what leaves the machine and to whom, says there is no
+             consent step, and says nothing expires. An organiser can no longer
+             run this on real people without being told. Deletion exists per
+             event, per submission, and as `npm run reset`
+   Found:    README "What leaves your machine", `npm run exports:clean`
+   Remains:  Whether the product should expire anything on its own rather than
+             leaving it to the operator. That is a policy decision with legal
+             weight and it is not mine
    Ask:      Pat, and whoever runs the next event
 
 Q3. Should the operator be able to re-judge a submission, and what should happen if they do?
@@ -58,10 +74,13 @@ Q3. Should the operator be able to re-judge a submission, and what should happen
              score rows. Reproduced: eight rows for a four-category rubric, all
              eight rendered in the UI. The overall score is unaffected because
              numerator and denominator double together `[observed]`
-   Depends:  Three different fixes. Refuse a second run, replace the prior
-             scores, or keep a history and show the latest. Each is a different
-             requirement and only one is right
-   Ask:      Pat
+   Status:   **Closed.** R31. Re-judging replaces, which is what reviews and
+             PRFAQs already did; scores was the one table that never got the
+             same treatment. R35 states the transition sequence, so a retry
+             re-entering at `transcribing` is now specified rather than
+             incidental
+   Remains:  Nothing. Reopen it if replace is the wrong call
+   Ask:      Pat, only to overturn it
 
 Q4. Which instruction wins: the rubric's "three next steps" or the prompt's "one improvement"?
    Found:    `rubrics/example-hackathon.yaml:30` against `judge/llm.py:59,67,69`
@@ -69,10 +88,12 @@ Q4. Which instruction wins: the rubric's "three next steps" or the prompt's "one
              persona says always close with three specific next steps. The
              scoring prompt asks for one honest improvement, to close by saying
              the score, and to fit 150 to 170 words `[contradiction]`
-   Depends:  What every spoken review at every event actually says. This is the
-             product's most visible output and the two halves of its prompt
-             disagree
-   Ask:      Pat
+   Status:   **Closed.** R32. The prompt owns the shape of the spoken review;
+             a rubric's persona owns tone. Our own example rubric was the one
+             overstepping, so it changed, and it now says where the boundary is
+   Remains:  Nothing, unless you want the three-next-steps close in the product
+             prompt instead, which is a taste call
+   Ask:      Pat, only to overturn it
 
 ---
 

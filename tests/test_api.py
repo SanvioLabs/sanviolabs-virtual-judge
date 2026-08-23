@@ -1064,3 +1064,105 @@ class TestAudioIsServedOnlyForRecordsThatExist:
             res = await client.get(f"/audio/{name}")
             assert res.status_code in (404, 307, 404), name
             assert b"FastAPI" not in res.content
+
+
+class TestTheStatusSequence:
+    """SPEC.md R35.
+
+    The pipeline is the only thing in production that writes a status, and it
+    writes them in one order. That order was nowhere stated, so a refactor that
+    skipped a stage would have shown up as a UI oddity at an event rather than
+    as a failing test.
+
+    Deliberately not enforced in `update_submission`. The single production
+    writer is the pipeline, so a check there would buy nothing and would make
+    every test that arranges state walk five steps to do it. The order is held
+    here, at the place that actually produces it.
+    """
+
+    def _recorder(self, monkeypatch):
+        seen = []
+        original = server.db.update_submission
+
+        def record(sub_id, **kwargs):
+            if "status" in kwargs:
+                seen.append(kwargs["status"])
+            return original(sub_id, **kwargs)
+
+        monkeypatch.setattr(server.db, "update_submission", record)
+        return seen
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_a_clean_run_walks_the_pipeline_in_order(
+        self, mock_transcribe, mock_score, mock_speak, client, monkeypatch
+    ):
+        mock_transcribe.return_value = "a pitch"
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}],
+            "summary": "s",
+        }
+        mock_speak.return_value = Path("/tmp/f.mp3")
+
+        sub = await _create_submission(client, "Sequential")
+        seen = self._recorder(monkeypatch)
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio", "audio/webm")},
+        )
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+
+        assert seen == ["transcribing", "transcribing", "scoring", "speaking", "complete"]
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_a_failure_at_scoring_ends_in_error_not_complete(
+        self, mock_transcribe, mock_score, mock_speak, client, monkeypatch
+    ):
+        mock_transcribe.return_value = "a pitch"
+        mock_score.side_effect = RuntimeError("the provider is down")
+
+        sub = await _create_submission(client, "Broken")
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio", "audio/webm")},
+        )
+        seen = self._recorder(monkeypatch)
+        res = await client.post(f"/api/submissions/{sub['id']}/judge")
+
+        assert res.status_code == 500
+        assert seen[-1] == "error"
+        assert "complete" not in seen
+        assert (await client.get(f"/api/submissions/{sub['id']}")).json()["status"] == "error"
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_a_failed_run_can_be_retried_from_the_start(
+        self, mock_transcribe, mock_score, mock_speak, client, monkeypatch
+    ):
+        """error re-enters at transcribing, which is why error is not terminal."""
+        mock_transcribe.return_value = "a pitch"
+        mock_score.side_effect = RuntimeError("down")
+        mock_speak.return_value = Path("/tmp/f.mp3")
+
+        sub = await _create_submission(client, "Retried")
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio", "audio/webm")},
+        )
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+        assert (await client.get(f"/api/submissions/{sub['id']}")).json()["status"] == "error"
+
+        mock_score.side_effect = None
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}],
+            "summary": "s",
+        }
+        seen = self._recorder(monkeypatch)
+        res = await client.post(f"/api/submissions/{sub['id']}/judge")
+
+        assert res.status_code == 200
+        assert seen == ["transcribing", "scoring", "speaking", "complete"]
