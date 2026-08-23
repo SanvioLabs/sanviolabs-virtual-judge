@@ -508,6 +508,7 @@
                 <option value="">— Select or create —</option>
             </select>
             <button class="btn btn-primary" onclick="showCreateEvent()" style="white-space:nowrap;"><i data-lucide="plus" style="width:16px;height:16px;"></i> New Event</button>
+            <button class="btn btn-danger hidden" id="btn-delete-event" onclick="deleteEvent()" style="white-space:nowrap;" title="Delete this event and everything in it"><i data-lucide="trash-2" style="width:16px;height:16px;"></i> Delete Event</button>
         </div>
 
         <!-- CREATE EVENT MODAL -->
@@ -608,6 +609,26 @@
     </div>
 
     <script>
+        // Everything rendered below goes through innerHTML, and almost none of it
+        // is ours. Team and event names are typed by whoever is at the keyboard,
+        // and the categories, rationales, finalist reasoning and every PRFAQ field
+        // are written by a model reading a transcript out of the room. A team that
+        // says the right sentence into the microphone should not be able to run
+        // script in the operator's browser, and with no auth on the API anyone on
+        // the same network can post a team name directly.
+        //
+        // Escape at the point of interpolation, every time. There is no allowlist
+        // of "safe" fields here, because the next field added would not be on it.
+        function esc(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         let mediaRecorder = null;
         let audioChunks = [];
         let currentSubmissionId = null;
@@ -631,7 +652,7 @@
                 const events = await res.json();
                 const select = document.getElementById('event-select');
                 select.innerHTML = '<option value="">— Select or create —</option>' +
-                    events.map(e => `<option value="${e.id}">${e.name} (${e.completed_count}/${e.submission_count} judged)</option>`).join('');
+                    events.map(e => `<option value="${esc(e.id)}">${esc(e.name)} (${esc(e.completed_count)}/${esc(e.submission_count)} judged)</option>`).join('');
             } catch (err) {
                 console.error('Error loading events:', err);
             }
@@ -639,10 +660,13 @@
 
         function selectEvent(eventId) {
             currentEventId = eventId;
+            const deleteBtn = document.getElementById('btn-delete-event');
             if (eventId) {
                 document.getElementById('main-content').classList.remove('hidden');
+                deleteBtn.classList.remove('hidden');
             } else {
                 document.getElementById('main-content').classList.add('hidden');
+                deleteBtn.classList.add('hidden');
             }
             // Every view is scoped to an event, so switching events has to swap
             // all of them. Otherwise the previous event's scores and finalists
@@ -809,7 +833,7 @@
                     } catch {
                         errMsg = await res.text();
                     }
-                    showStatus(`Error: ${errMsg}`, 'error');
+                    showStatus(`Error: ${esc(errMsg)}`, 'error');
                     document.getElementById('btn-start').classList.remove('hidden');
                     document.getElementById('team-name').disabled = false;
                     return;
@@ -867,9 +891,9 @@
             const grid = document.getElementById('scores-grid');
             grid.innerHTML = result.scores.map(s => `
                 <div class="score-card">
-                    <div class="category">${s.category}</div>
-                    <div class="score-value">${s.score}</div>
-                    <div class="rationale">${s.rationale}</div>
+                    <div class="category">${esc(s.category)}</div>
+                    <div class="score-value">${esc(s.score)}</div>
+                    <div class="rationale">${esc(s.rationale)}</div>
                 </div>
             `).join('');
 
@@ -921,7 +945,7 @@
 
                 const scoresHtml = s.scores.length > 0
                     ? `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">${s.scores.map(sc =>
-                        `<span style="background:#1e293b;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.8rem;color:#94a3b8;">${sc.category}: <strong style="color:#60a5fa;">${sc.score}</strong></span>`
+                        `<span style="background:#1e293b;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.8rem;color:#94a3b8;">${esc(sc.category)}: <strong style="color:#60a5fa;">${esc(sc.score)}</strong></span>`
                       ).join('')}</div>`
                     : '';
 
@@ -929,23 +953,27 @@
                     ? `<span id="prfaq-controls-${s.id}" style="display:contents;">${prfaqControls(s.id, s.has_prfaq)}</span>`
                     : '';
 
-                const audioHtml = (pitchAudioSrc || reviewAudioSrc || prfaqBtn)
+                // Someone will record the wrong team. This is the undo.
+                const deleteBtn = `<button class="btn btn-danger" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="deleteSubmission('${esc(s.id)}', ${esc(JSON.stringify(s.team_name))})"><i data-lucide="trash-2" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Delete</button>`;
+
+                const audioHtml = (pitchAudioSrc || reviewAudioSrc || prfaqBtn || deleteBtn)
                     ? `<div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
                         ${pitchAudioSrc ? `<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="playAudio('${pitchAudioSrc}')"><i data-lucide="mic" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Pitch</button>` : ''}
                         ${reviewAudioSrc ? `<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="playAudio('${reviewAudioSrc}')"><i data-lucide="volume-2" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Review</button>` : ''}
                         ${prfaqBtn}
+                        ${deleteBtn}
                        </div>`
                     : '';
 
                 const summaryHtml = s.review
-                    ? `<p style="font-size:0.85rem;color:#64748b;margin-top:0.4rem;">${s.review.summary}</p>`
+                    ? `<p style="font-size:0.85rem;color:#64748b;margin-top:0.4rem;">${esc(s.review.summary)}</p>`
                     : '';
 
                 return `
                     <div class="submission-item" style="flex-direction:column;align-items:stretch;">
                         <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <span class="team">${s.team_name}</span>
-                            <span class="score-badge">${score}</span>
+                            <span class="team">${esc(s.team_name)}</span>
+                            <span class="score-badge">${esc(score)}</span>
                         </div>
                         ${scoresHtml}
                         ${summaryHtml}
@@ -1041,7 +1069,7 @@
             const verb = force ? 'Rewriting' : 'Writing';
 
             if (btn) { btn.disabled = true; btn.textContent = `${verb}…`; }
-            panel.innerHTML = `<p style="color:#64748b;font-size:0.85rem;">${verb} the PRFAQ — this takes a minute.</p>`;
+            panel.innerHTML = `<p style="color:#64748b;font-size:0.85rem;">${esc(verb)} the PRFAQ — this takes a minute.</p>`;
 
             let written = force;
             try {
@@ -1053,7 +1081,7 @@
                 panel.dataset.loaded = '1';
                 written = true;
             } catch (e) {
-                panel.innerHTML = `<p style="color:#f87171;font-size:0.85rem;">${e.message}</p>`;
+                panel.innerHTML = `<p style="color:#f87171;font-size:0.85rem;">${esc(e.message)}</p>`;
             } finally {
                 // Rebuilt rather than restored: a first write turns "Write PRFAQ"
                 // into "PRFAQ" plus "Rewrite PRFAQ", and the old label would lie.
@@ -1072,16 +1100,16 @@
 
             const ledger = assumptions.map(a => `
                 <div style="border-left:2px solid ${gradeColor(a.grade)};padding-left:0.6rem;margin-bottom:0.6rem;">
-                    <div style="font-size:0.85rem;color:#e2e8f0;">${a.assumption}</div>
-                    <div style="font-size:0.75rem;color:${gradeColor(a.grade)};margin-top:0.15rem;">${a.grade}</div>
-                    <div style="font-size:0.78rem;color:#64748b;margin-top:0.15rem;">${a.evidence || ''}</div>
+                    <div style="font-size:0.85rem;color:#e2e8f0;">${esc(a.assumption)}</div>
+                    <div style="font-size:0.75rem;color:${gradeColor(a.grade)};margin-top:0.15rem;">${esc(a.grade)}</div>
+                    <div style="font-size:0.78rem;color:#64748b;margin-top:0.15rem;">${esc(a.evidence || '')}</div>
                 </div>`).join('');
 
             return `
                 <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:0.9rem;">
                     <div style="font-size:0.7rem;color:#fbbf24;margin-bottom:0.5rem;">⚠️ AI-written from the pitch. Nobody reviewed it — check every fact before it goes anywhere.</div>
-                    <div style="font-size:0.95rem;color:#f1f5f9;font-weight:600;">${pr.headline || c.product_name || ''}</div>
-                    <div style="font-size:0.82rem;color:#94a3b8;margin-top:0.25rem;">${pr.subheadline || c.one_liner || ''}</div>
+                    <div style="font-size:0.95rem;color:#f1f5f9;font-weight:600;">${esc(pr.headline || c.product_name || '')}</div>
+                    <div style="font-size:0.82rem;color:#94a3b8;margin-top:0.25rem;">${esc(pr.subheadline || c.one_liner || '')}</div>
                     <div style="font-size:0.8rem;color:#64748b;margin-top:0.7rem;">
                         ${assumptions.length} assumptions —
                         <span style="color:#4ade80;">${counts['Tested']} tested</span> ·
@@ -1173,7 +1201,7 @@
 
             if (!res.ok) {
                 const err = await res.json();
-                showFinalistStatus(`Error: ${err.detail}`, 'error');
+                showFinalistStatus(`Error: ${esc(err.detail)}`, 'error');
                 btn.disabled = false;
                 return;
             }
@@ -1226,10 +1254,10 @@
             container.innerHTML = result.top_picks.map((pick, i) => `
                 <div class="finalist-result ${colors[i]}">
                     <div class="rank"><i data-lucide="${icons[i]}" style="display:inline;vertical-align:middle;width:1.5rem;height:1.5rem;margin-right:0.3rem;"></i> #${pick.rank}</div>
-                    <div class="team-name">${pick.team_name}</div>
-                    <div class="reason">${pick.reasoning}</div>
+                    <div class="team-name">${esc(pick.team_name)}</div>
+                    <div class="reason">${esc(pick.reasoning)}</div>
                 </div>
-            `).join('') + `<div class="summary">${result.reasoning}</div>`;
+            `).join('') + `<div class="summary">${esc(result.reasoning)}</div>`;
 
             container.classList.remove('hidden');
 
@@ -1250,6 +1278,9 @@
         }
 
         // --- Status helpers ---
+        // These take HTML on purpose: the judging message carries a Lucide icon.
+        // Anything interpolated into a message must therefore be run through
+        // esc() at the call site, not here.
         function showStatus(msg, type) {
             const el = document.getElementById('status');
             el.innerHTML = msg;
@@ -1268,6 +1299,40 @@
 
         function hideFinalistStatus() {
             document.getElementById('finalist-status').className = 'status';
+        }
+
+        // --- Deleting ------------------------------------------------------
+        // Both of these are permanent and neither asks twice, so the confirm
+        // text names what is about to go and, for an event, how much of it.
+
+        async function deleteSubmission(subId, teamName) {
+            if (!confirm(`Delete ${teamName}? Their recording, scores, review and PRFAQ all go with it. This cannot be undone.`)) return;
+            try {
+                const res = await fetch(`/api/submissions/${subId}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error((await res.json()).detail || 'Delete failed');
+                await loadSubmissions();
+                await loadEvents();
+            } catch (e) {
+                showStatus(`Could not delete: ${esc(e.message)}`, 'error');
+            }
+        }
+
+        async function deleteEvent() {
+            if (!currentEventId) return;
+            const select = document.getElementById('event-select');
+            const label = select.options[select.selectedIndex]?.text || 'this event';
+            if (!confirm(`Delete "${label}"?\n\nEvery team in it, their recordings, scores, reviews, PRFAQs and the finalist round are deleted permanently. Export the bundle first if you need the results.`)) return;
+            try {
+                const res = await fetch(`/api/events/${currentEventId}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error((await res.json()).detail || 'Delete failed');
+                currentEventId = null;
+                document.getElementById('main-content').classList.add('hidden');
+                document.getElementById('btn-delete-event').classList.add('hidden');
+                await loadEvents();
+                document.getElementById('event-select').value = '';
+            } catch (e) {
+                alert(`Could not delete the event: ${e.message}`);
+            }
         }
 
         // --- How to use ---------------------------------------------------

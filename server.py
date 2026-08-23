@@ -245,11 +245,13 @@ def _verify_providers() -> dict:
 async def api_list_events():
     """List all events (hackathons)."""
     events = db.list_events()
-    # Enrich with submission count
+    # One grouped query for every count, rather than a query per event. This
+    # route fills the dropdown on every page load.
+    counts = db.submission_counts_by_event()
     for e in events:
-        subs = db.list_submissions(event_id=e["id"])
-        e["submission_count"] = len(subs)
-        e["completed_count"] = len([s for s in subs if s["status"] == "complete"])
+        c = counts.get(e["id"], {"submission_count": 0, "completed_count": 0})
+        e["submission_count"] = c["submission_count"]
+        e["completed_count"] = c["completed_count"]
     return events
 
 
@@ -275,6 +277,57 @@ async def api_get_event(event_id: str):
         "submission_count": len(subs),
         "completed_count": len([s for s in subs if s["status"] == "complete"]),
     }
+
+
+def _remove_audio_files(paths: list[str], *extra: Path) -> int:
+    """Delete recordings for something that no longer exists.
+
+    Best effort by design. A missing file is the desired end state, and a
+    delete that half succeeds should not leave the row behind.
+    """
+    removed = 0
+    candidates = [Path(p) for p in paths if p] + list(extra)
+    for path in candidates:
+        # The originals are .webm and the transcoded copies sit beside them.
+        for candidate in {path, path.with_suffix(".mp3"), path.with_suffix(".webm")}:
+            try:
+                if candidate.is_file() and candidate.parent == AUDIO_DIR:
+                    candidate.unlink()
+                    removed += 1
+            except OSError as e:
+                logger.warning("Could not remove %s: %s", candidate, e)
+    return removed
+
+
+@app.delete("/api/submissions/{sub_id}")
+async def api_delete_submission(sub_id: str):
+    """Delete one submission, its scores, review, PRFAQ and recordings.
+
+    Someone will start a recording on the wrong team. Until this existed the
+    only remedy was editing the database by hand or resetting the event.
+    """
+    try:
+        audio_paths = db.delete_submission(sub_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    removed = _remove_audio_files(audio_paths, AUDIO_DIR / f"{sub_id}_review.mp3")
+    return {"deleted": sub_id, "audio_files_removed": removed}
+
+
+@app.delete("/api/events/{event_id}")
+async def api_delete_event(event_id: str):
+    """Delete an event and everything recorded under it.
+
+    This is not recoverable. Export the bundle first if the results matter.
+    """
+    try:
+        audio_paths = db.delete_event(event_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    removed = _remove_audio_files(audio_paths, AUDIO_DIR / f"finalist_{event_id[:8]}.mp3")
+    return {"deleted": event_id, "audio_files_removed": removed}
 
 
 # --- Rubrics ---

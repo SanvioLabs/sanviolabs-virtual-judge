@@ -301,11 +301,13 @@ virtual-judge/
 | `GET` | `/api/events` | List all events |
 | `POST` | `/api/events` | Create event `{name, rubric_id?, description?}` |
 | `GET` | `/api/events/:id` | Get event details |
+| `DELETE` | `/api/events/:id` | Delete an event, every submission in it, and their audio. Not recoverable |
 | `POST` | `/api/submissions` | Create a submission `{team_name, event_id}` |
 | `POST` | `/api/submissions/:id/audio` | Upload recorded audio (multipart) |
 | `POST` | `/api/submissions/:id/judge` | Run full pipeline (transcribe → score → speak) |
 | `GET` | `/api/events/:id/submissions` | List all submissions for an event |
 | `GET` | `/api/submissions/:id` | Get single submission detail |
+| `DELETE` | `/api/submissions/:id` | Delete one submission, its scores, review, PRFAQ and audio. For the recording started on the wrong team |
 | `POST` | `/api/submissions/:id/prfaq` | Write the team's PRFAQ. Returns the stored one unless `?force=true` |
 | `GET` | `/api/submissions/:id/prfaq` | Get a previously generated PRFAQ |
 | `POST` | `/api/events/:id/prfaqs` | Write PRFAQs for every judged team. Returns generated / skipped / failed |

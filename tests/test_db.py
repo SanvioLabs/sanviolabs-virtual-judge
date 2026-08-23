@@ -215,3 +215,85 @@ class TestRubrics:
             assert len(data["categories"]) == 4
             assert data["scale_min"] == 1
             assert data["scale_max"] == 5
+
+
+class TestDeleting:
+    """Nothing could be removed before this existed. A misfired recording was
+    permanent, and a season of test events sat in the dropdown forever."""
+
+    def _judged(self, team="Team", event_name="Event"):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event(event_name, rubric_id, "")
+        sub_id = db.create_submission(team, event_id, rubric_id)
+        db.update_submission(sub_id, transcript="t", audio_path="/tmp/x.webm", status="complete")
+        db.save_scores(sub_id, [{"category": "A", "score": 4, "rationale": "r"}])
+        db.save_review(sub_id, 4.0, "s", "/tmp/x_review.mp3", "spoken")
+        db.save_prfaq(sub_id, {"a": 1}, "# md", "model")
+        return event_id, sub_id
+
+    def test_deleting_a_submission_takes_its_children(self):
+        _, sub_id = self._judged()
+        db.delete_submission(sub_id)
+        assert db.get_submission(sub_id) is None
+        assert db.get_scores(sub_id) == []
+        assert db.get_review(sub_id) is None
+        assert db.get_prfaq(sub_id) is None
+
+    def test_it_returns_the_audio_to_clean_up(self):
+        _, sub_id = self._judged()
+        paths = db.delete_submission(sub_id)
+        assert "/tmp/x.webm" in paths
+        assert "/tmp/x_review.mp3" in paths
+
+    def test_deleting_an_unknown_submission_raises(self):
+        with pytest.raises(KeyError):
+            db.delete_submission("nope")
+
+    def test_deleting_an_event_takes_every_submission(self):
+        event_id, sub_id = self._judged()
+        db.delete_event(event_id)
+        assert db.get_event(event_id) is None
+        assert db.get_submission(sub_id) is None
+        assert db.get_scores(sub_id) == []
+        assert db.get_prfaq(sub_id) is None
+
+    def test_deleting_an_event_takes_its_finalist_round(self):
+        event_id, _ = self._judged()
+        rubric_id = db.get_event(event_id)["rubric_id"]
+        db.save_finalist_run(event_id, rubric_id, [{"rank": 1, "team_name": "A"}], "why", "/tmp/f.mp3", "x")
+        db.delete_event(event_id)
+        assert db.get_latest_finalist_run(event_id) is None
+
+    def test_deleting_one_event_leaves_the_others_alone(self):
+        keep_event, keep_sub = self._judged(team="Keep", event_name="Keeper")
+        drop_event, _ = self._judged(team="Drop", event_name="Doomed")
+        db.delete_event(drop_event)
+        assert db.get_event(keep_event) is not None
+        assert db.get_submission(keep_sub) is not None
+        assert len(db.get_scores(keep_sub)) == 1
+
+    def test_deleting_an_unknown_event_raises(self):
+        with pytest.raises(KeyError):
+            db.delete_event("nope")
+
+
+class TestSubmissionCounts:
+    """The event list used to run one query per event to build these."""
+
+    def test_counts_are_grouped_by_event(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        e1 = db.create_event("One", rubric_id, "")
+        e2 = db.create_event("Two", rubric_id, "")
+        a = db.create_submission("A", e1, rubric_id)
+        db.create_submission("B", e1, rubric_id)
+        db.create_submission("C", e2, rubric_id)
+        db.update_submission(a, status="complete")
+
+        counts = db.submission_counts_by_event()
+        assert counts[e1] == {"submission_count": 2, "completed_count": 1}
+        assert counts[e2] == {"submission_count": 1, "completed_count": 0}
+
+    def test_an_event_with_no_submissions_is_simply_absent(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        empty = db.create_event("Empty", rubric_id, "")
+        assert empty not in db.submission_counts_by_event()

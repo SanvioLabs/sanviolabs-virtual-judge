@@ -1,5 +1,6 @@
 """SQLite database for Virtual Judge."""
 
+import os
 import sqlite3
 import json
 import uuid
@@ -8,7 +9,10 @@ from pathlib import Path
 from typing import Optional
 
 
-DB_PATH = Path(__file__).parent.parent / "judge.db"
+# Overridable so a test run does not write into the event database sitting in
+# the project root. The Playwright suite starts a real server, and without this
+# every browser test filed its fixtures alongside real hackathon results.
+DB_PATH = Path(os.environ.get("VJ_DB_PATH") or Path(__file__).parent.parent / "judge.db")
 
 
 def get_db() -> sqlite3.Connection:
@@ -298,6 +302,100 @@ def create_submission(team_name: str, event_id: str, rubric_id: str) -> str:
     conn.commit()
     conn.close()
     return sub_id
+
+
+def delete_submission(sub_id: str) -> list[str]:
+    """Delete one submission and everything hanging off it.
+
+    Returns the audio paths that were recorded against it, so the caller can
+    remove the files. The database does not own them and will not clean them up.
+
+    Children go first: foreign keys are enforced, so deleting the parent while
+    a score still points at it fails rather than cascading.
+    """
+    conn = get_db()
+    row = conn.execute("SELECT audio_path FROM submissions WHERE id = ?", (sub_id,)).fetchone()
+    if row is None:
+        conn.close()
+        raise KeyError(sub_id)
+
+    audio_paths = [row["audio_path"]] if row["audio_path"] else []
+    review = conn.execute(
+        "SELECT audio_path FROM reviews WHERE submission_id = ?", (sub_id,)
+    ).fetchone()
+    if review and review["audio_path"]:
+        audio_paths.append(review["audio_path"])
+
+    for table in ("prfaqs", "reviews", "scores"):
+        conn.execute(f"DELETE FROM {table} WHERE submission_id = ?", (sub_id,))
+    conn.execute("DELETE FROM submissions WHERE id = ?", (sub_id,))
+    conn.commit()
+    conn.close()
+    return audio_paths
+
+
+def delete_event(event_id: str) -> list[str]:
+    """Delete an event, every submission in it, and every finalist round it ran.
+
+    Returns every audio path involved, for the same reason delete_submission does.
+    """
+    conn = get_db()
+    if conn.execute("SELECT 1 FROM events WHERE id = ?", (event_id,)).fetchone() is None:
+        conn.close()
+        raise KeyError(event_id)
+
+    sub_ids = [
+        r["id"] for r in
+        conn.execute("SELECT id FROM submissions WHERE event_id = ?", (event_id,)).fetchall()
+    ]
+    audio_paths = [
+        r["audio_path"] for r in
+        conn.execute("SELECT audio_path FROM submissions WHERE event_id = ?", (event_id,)).fetchall()
+        if r["audio_path"]
+    ]
+    for r in conn.execute(
+        "SELECT audio_path FROM reviews WHERE submission_id IN "
+        "(SELECT id FROM submissions WHERE event_id = ?)", (event_id,)
+    ).fetchall():
+        if r["audio_path"]:
+            audio_paths.append(r["audio_path"])
+    for r in conn.execute(
+        "SELECT audio_path FROM finalist_runs WHERE event_id = ?", (event_id,)
+    ).fetchall():
+        if r["audio_path"]:
+            audio_paths.append(r["audio_path"])
+
+    if sub_ids:
+        marks = ",".join("?" for _ in sub_ids)
+        for table in ("prfaqs", "reviews", "scores"):
+            conn.execute(f"DELETE FROM {table} WHERE submission_id IN ({marks})", sub_ids)
+    conn.execute("DELETE FROM finalist_runs WHERE event_id = ?", (event_id,))
+    conn.execute("DELETE FROM submissions WHERE event_id = ?", (event_id,))
+    conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    conn.commit()
+    conn.close()
+    return audio_paths
+
+
+def submission_counts_by_event() -> dict[str, dict]:
+    """Total and completed submission counts for every event, in one query.
+
+    The event list used to run list_submissions once per event. On a database
+    that has accumulated a season of events that is hundreds of queries to fill
+    a dropdown, and nothing deletes events, so it only ever grew.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT event_id, "
+        "COUNT(*) AS total, "
+        "SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) AS completed "
+        "FROM submissions GROUP BY event_id"
+    ).fetchall()
+    conn.close()
+    return {
+        r["event_id"]: {"submission_count": r["total"], "completed_count": r["completed"] or 0}
+        for r in rows
+    }
 
 
 def update_submission(sub_id: str, **kwargs):
