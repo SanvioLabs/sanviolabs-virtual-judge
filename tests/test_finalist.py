@@ -79,7 +79,9 @@ class TestTheFinalistRoundReadsThePitch:
         passes on a machine that happens to have a real key in its
         environment. CI does not, and said so.
         """
-        monkeypatch.setattr(llm, "_get_client", lambda: object())
+        # `object` is callable and returns an instance, which is all the code
+        # under test does with the result.
+        monkeypatch.setattr(llm, "_get_client", object)
 
     def _prompt_for(self, transcript, monkeypatch):
         captured = {}
