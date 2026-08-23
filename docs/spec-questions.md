@@ -22,7 +22,7 @@ reading the code will never tell you which.
 Ordered by what the answer changes, not by where it was found. The first four
 are a call agenda. The rest is the backlog.
 
-**Where this stands.** Thirteen of the seventeen are closed and two are half closed, because the answer turned out to be already in the design rather than
+**Where this stands.** Fourteen of the seventeen are closed and two are half closed, because the answer turned out to be already in the design rather than
 in someone's head. Those are marked. The rest split into two kinds, and the
 difference matters:
 
@@ -97,6 +97,12 @@ Q4. Which instruction wins: the rubric's "three next steps" or the prompt's "one
 ---
 
 Q5. Why three retries, and why exponential backoff from two seconds?
+   Status:   **Closed by measurement**, though not the way it was asked. The
+             retries were never the problem: two backoffs is six seconds. The
+             timeouts behind them were, at 180 and 90 seconds against work that
+             measures 21 and 14.5. They are four times observed now, R43, and
+             the worst case fell from seventeen minutes to eleven. Why three
+             retries specifically is still unknown and no longer costs anything
    Found:    `judge/retry.py`, applied in `llm.py:31,98`, `transcribe.py:75`, `speak.py:12`, `prfaq.py:240`
    Behaviour: Every external call retries three times `[observed]`. No stated
              reason `[undecided]`

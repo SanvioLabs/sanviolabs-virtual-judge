@@ -87,7 +87,16 @@ def transcribe_audio(audio_path: str | Path) -> str:
     """
     audio_b64, audio_format = _encode_audio(audio_path)
 
-    client = get_client(timeout=180.0)
+# Measured 2026-08-23 against the real providers, on synthetic speech of a
+# realistic pitch: transcription 11.6s for 166 seconds of audio, which scales to
+# about 21s for a five minute pitch; scoring 14.5s; speech 8.0s. The whole
+# pipeline ran in 34.1s, which is the "about thirty seconds" the UI promises.
+#
+# The ceilings below are roughly four times observed. Generous, because a
+# timeout that fires on a slow but healthy response costs a team their judging,
+# and not the eight to nine times they were, because the ceiling is also what
+# sets how long a hung provider holds the room.
+    client = get_client(timeout=90.0)
     response = client.chat.completions.create(
         model=transcription_model(),
         max_tokens=8000,

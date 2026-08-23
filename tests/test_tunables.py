@@ -172,3 +172,39 @@ class TestRubricsAreImmutableOnceLoaded:
 
         assert len(db.list_rubrics()) == 1
         assert db.get_rubric(before["id"])["categories"][0]["description"] == "first"
+
+
+class TestTimeoutsTraceToAMeasurement:
+    """SPEC.md R43.
+
+    These were 180 and 90 seconds, eight and six times what the work actually
+    takes, and the speech client had no explicit timeout at all. Nothing had
+    ever been measured, so the ceilings were guesses and they set the worst
+    case: seventeen minutes of a hung provider holding the room.
+
+    Measured 2026-08-23 against the real providers on synthetic speech, one run
+    each: transcription 11.6s for 166 seconds of audio, about 21s scaled to a
+    five minute pitch; scoring 14.5s; speech 8.0s; the whole pipeline 34.1s,
+    which is the thirty seconds the UI promises.
+    """
+
+    def test_transcription_allows_about_four_times_what_it_takes(self):
+        assert "get_client(timeout=90.0)" in inspect.getsource(transcribe)
+
+    def test_scoring_allows_about_four_times_what_it_takes(self):
+        assert "get_client(timeout=60.0)" in inspect.getsource(llm._get_client)
+
+    def test_speech_has_an_explicit_timeout_at_all(self):
+        """It used to take the SDK default, which is unbounded as far as anyone
+        reading this repo could tell."""
+        assert "timeout=60.0" in inspect.getsource(speak.speak)
+
+    def test_the_prfaq_keeps_a_long_ceiling(self):
+        """It writes a whole document and runs after the room has cleared, so
+        the reason to keep transcription's old ceiling short does not apply."""
+        assert "get_client(timeout=180.0)" in inspect.getsource(prfaq._get_client)
+
+    def test_the_worst_case_is_stated_in_the_spec(self):
+        from pathlib import Path
+        spec = (Path(__file__).parent.parent / "SPEC.md").read_text()
+        assert "eleven minutes" in spec

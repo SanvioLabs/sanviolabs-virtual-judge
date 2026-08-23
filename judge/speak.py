@@ -22,7 +22,10 @@ def speak(text: str, output_path: str | Path) -> Path:
     Returns:
         Path to the generated audio file.
     """
-    client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
+    # Explicit rather than the SDK default, which was unknown and therefore
+    # unbounded as far as anyone reading this could tell. Measured at 8.0s for a
+    # 160 word review.
+    client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"], timeout=60.0)
     voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Default: Rachel
 
     audio_generator = client.text_to_speech.convert(

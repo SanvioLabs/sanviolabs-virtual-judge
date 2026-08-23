@@ -25,7 +25,9 @@ FINALIST_TRANSCRIPT_CHARS = int(os.environ.get("VJ_FINALIST_TRANSCRIPT_CHARS", "
 
 
 def _get_client():
-    return get_client(timeout=90.0)
+    # See the note in transcribe.py: four times the 14.5s a real scoring call
+    # was measured at, rather than the 6x it was.
+    return get_client(timeout=60.0)
 
 
 @retry(max_attempts=3, backoff_base=2.0, retryable_exceptions=RETRYABLE)

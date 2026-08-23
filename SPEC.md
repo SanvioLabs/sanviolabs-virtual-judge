@@ -240,6 +240,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R43 | Every provider timeout is roughly four times a measured call, not a guess. Transcription 90s, scoring 60s, speech 60s, and the PRFAQ 180s because it writes a document after the room has cleared | observed, measured 2026-08-23 | `transcribe`, `llm`, `speak`, `prfaq` | `TestTimeoutsTraceToAMeasurement` |
 | R42 | A rubric file may claim the default with `default: true`. Without one the most recently created wins, which is R2 unchanged | observed | `rubrics.get_default_rubric_id` | `TestARubricCanDeclareItselfTheDefault` |
 | R41 | The finalist round's input grows linearly with team count and is not the limit on event size. Measured at roughly 4k tokens for 3 teams, 24k for 20, 49k for 40 and 97k for 80, against full five minute transcripts | observed, measured 2026-08-23 | `llm.run_finalist_round` | `TestTheFinalistRoundScalesWithTheRoom` |
 | R40 | While judging runs the operator sees elapsed time, not a fixed promise. The pipeline is usually about thirty seconds and its worst case, every provider call hanging to its timeout across three retries, is roughly seventeen minutes | observed | `startJudgingClock`, the timeouts in `judge/` | `recording-failures.spec.ts` |
@@ -254,8 +255,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Forty-one of forty-two are observed and one rests only on the README.
-Forty-one carry a test. The one without, R19, is a process instruction to
+Forty-two of forty-three are observed and one rests only on the README.
+Forty-two carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
@@ -292,15 +293,22 @@ a transient error; a sustained one leaves the team unjudged with the room
 waiting, and there is no degraded mode, no queue, and no way to record now and
 judge later `[observed]`. Whether that is acceptable is `[undecided]`.
 
-**How long that failure takes to become visible** is now stated rather than
-implied. Each provider call has its own timeout, 180 seconds for transcription
-and 180 for the PRFAQ, 90 for scoring, and the ElevenLabs client's default for
-speech. Each is retried three times with 2 and 4 second backoffs. A run in
-which every call hangs to its ceiling therefore takes on the order of
-seventeen minutes, against a UI that used to say "this takes ~30 seconds" and
-never changed. It counts now, and says so past ninety seconds. Nothing bounds
-the total and nothing cancels it: the operator's remedy is still to reload
-`[observed]`.
+**How long that failure takes to become visible** is measured rather than
+guessed. On 2026-08-23 the pipeline was run against the real providers on
+synthetic speech: transcription 11.6s for 166 seconds of audio, scoring 14.5s,
+speech 8.0s, and the whole run 34.1s, which is the thirty seconds the UI
+promises. The timeouts were 180 and 90 seconds against that, eight and six
+times the work, and the speech client had no explicit timeout at all.
+
+They are roughly four times observed now, which puts the worst case, every call
+hanging through all three retries, at about eleven minutes rather than
+seventeen. Four times rather than tighter because a timeout that fires on a
+slow but healthy response costs a team their judging, and that is worse than
+waiting.
+
+Nothing still bounds the total and nothing cancels it: the operator's remedy is
+to reload, and the status line counts elapsed so they can see the difference
+between slow and dead `[observed]`.
 
 ## 9. Subsystems
 
