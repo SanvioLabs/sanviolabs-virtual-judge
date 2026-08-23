@@ -944,3 +944,63 @@ class TestPrfaqDownload:
 
     async def test_an_unknown_submission_is_a_404(self, client):
         assert (await client.get("/api/submissions/nope/prfaq/download")).status_code == 404
+
+
+class TestJudgingDoesNotBlockTheServer:
+    """SPEC.md R28.
+
+    Every external step of the pipeline is synchronous and the run takes about
+    thirty seconds before retry backoff. Called directly from the coroutine it
+    would hold the event loop for the whole run, freezing the UI and every other
+    viewer on the network at the moment the room is waiting on a result.
+
+    The measurement has to start before the blocking call, not after it. A timer
+    opened inside the second request reads zero either way, because by then the
+    block has already finished. That version of this test passed with the fix
+    reverted, which is the only reason this note exists.
+    """
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_health_answers_while_a_judge_run_is_in_flight(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        import asyncio
+        import time
+
+        BLOCK_SECONDS = 1.0
+
+        def slow_and_synchronous(_path):
+            time.sleep(BLOCK_SECONDS)
+            return "a pitch"
+
+        mock_transcribe.side_effect = slow_and_synchronous
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}],
+            "summary": "s",
+        }
+        mock_speak.return_value = Path("/tmp/fake.mp3")
+
+        sub = await _create_submission(client, "Blocker")
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio", "audio/webm")},
+        )
+
+        # Both scheduled before either runs, and the clock starts here. Judging
+        # is queued first, so an inline block delays health by its full length.
+        opened = time.monotonic()
+        judging = asyncio.create_task(client.post(f"/api/submissions/{sub['id']}/judge"))
+        health_call = asyncio.create_task(client.get("/api/health"))
+
+        health = await health_call
+        health_elapsed = time.monotonic() - opened
+
+        assert health.status_code == 200
+        assert health_elapsed < BLOCK_SECONDS / 2, (
+            f"/api/health took {health_elapsed:.2f}s against a {BLOCK_SECONDS}s "
+            "transcription, so the event loop was held for the pipeline"
+        )
+
+        assert (await judging).status_code == 200

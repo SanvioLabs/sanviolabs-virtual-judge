@@ -442,3 +442,79 @@ class TestTheDestructiveMigrationIsRecoverable:
             db.init_db()
         assert "pre-migration" in caplog.text
         assert "dropped" in caplog.text
+
+
+class TestTheDefaultRubric:
+    """SPEC.md R2. An event created without a named rubric takes the most
+    recently created one. On a fresh install there is only one rubric, so this
+    never surfaces until a second is added, which is exactly when it matters."""
+
+    def test_the_newest_rubric_wins(self):
+        db.create_rubric("First", [{"name": "A", "description": "a", "weight": 1}])
+        newest = db.create_rubric("Second", [{"name": "B", "description": "b", "weight": 1}])
+        assert rubrics.get_default_rubric_id() == newest
+
+    def test_a_single_rubric_is_the_default(self):
+        only = db.create_rubric("Only", [{"name": "A", "description": "a", "weight": 1}])
+        assert rubrics.get_default_rubric_id() == only
+
+    def test_an_event_created_without_one_gets_it(self):
+        db.create_rubric("Old", [{"name": "A", "description": "a", "weight": 1}])
+        newest = db.create_rubric("New", [{"name": "B", "description": "b", "weight": 1}])
+        event_id = db.create_event("E", rubrics.get_default_rubric_id(), "")
+        assert db.get_event(event_id)["rubric_id"] == newest
+
+
+class TestWhatABackupActuallyCovers:
+    """SPEC.md R30.
+
+    The README used to tell operators that copying judge.db was the full
+    history. It is not: every recording lives in audio_recordings/ and the
+    database refers to them by absolute path. Following that instruction and
+    then wiping the machine loses every pitch, while the restored database
+    still shows an audio player for each one.
+    """
+
+    def _judged_event(self, audio_dir):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("Backed Up", rubric_id, "")
+        sub_id = db.create_submission("Recorded Team", event_id, rubric_id)
+        pitch = audio_dir / f"{sub_id}.webm"
+        pitch.write_bytes(b"pitch audio")
+        db.update_submission(sub_id, audio_path=str(pitch), transcript="what they said",
+                             status="complete")
+        db.save_scores(sub_id, [{"category": "A", "score": 4, "rationale": "why"}])
+        db.save_review(sub_id, 4.0, "summary", str(audio_dir / f"{sub_id}_review.mp3"), "spoken")
+        db.save_prfaq(sub_id, {"one_liner": "x"}, "# doc", "model")
+        return sub_id
+
+    def test_the_database_carries_every_score_transcript_review_and_prfaq(self, tmp_path):
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        sub_id = self._judged_event(audio)
+
+        copy = tmp_path / "restored.db"
+        with db.connection() as source, db.connection_to(copy) as target:
+            source.backup(target)
+
+        with patch.object(db, "DB_PATH", copy):
+            sub = db.get_submission(sub_id)
+            assert sub["transcript"] == "what they said"
+            assert len(db.get_scores(sub_id)) == 1
+            assert db.get_review(sub_id)["overall_score"] == 4.0
+            assert db.get_prfaq(sub_id)["markdown"] == "# doc"
+
+    def test_the_database_carries_no_audio(self, tmp_path):
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        sub_id = self._judged_event(audio)
+        assert b"pitch audio" not in db.DB_PATH.read_bytes()
+        # Only a path to it, which is why the directory has to be copied too.
+        assert db.get_submission(sub_id)["audio_path"].endswith(".webm")
+
+    def test_the_recorded_path_is_absolute(self, tmp_path):
+        """So a restore into a different directory breaks every reference."""
+        audio = tmp_path / "audio"
+        audio.mkdir()
+        sub_id = self._judged_event(audio)
+        assert Path(db.get_submission(sub_id)["audio_path"]).is_absolute()

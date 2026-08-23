@@ -186,7 +186,7 @@ These are the requirements a rewrite loses. None is written down anywhere else.
 | **A team name is unique within an event** | export filenames, the finalist round matching names back to teams | Nothing enforces it. Export filenames are now de-duplicated with a numeric suffix, but the finalist reconciliation refuses a duplicate name outright, so an event with two identically named teams cannot complete a finalist round `[observed]` |
 | **`submissions.status` follows recording → transcribing → scoring → speaking → complete, or error** | the UI's view of what is judged, `completed_count`, the finalist round's eligibility filter | No column constraint and no transition check. Any status can be written at any time `[observed]` |
 | **A rubric's categories do not change after submissions are scored against it** | the CSV's fixed column set, the leaderboard, `_overall_score` | Rubrics sync by name, so editing a rubric file creates a second rubric rather than mutating the first. The first is never re-pointed `[observed]` |
-| **`audio_path` on a submission points at a file that exists** | transcription, the export bundle, the `/audio` mount | Deleting files by hand leaves the row. Transcription fails with "Audio file not found" `[observed]` |
+| **`audio_path` on a submission points at a file that exists, at the absolute path recorded when it was written** | transcription, the export bundle, the `/audio` mount | Deleting files by hand leaves the row and transcription fails with "Audio file not found". Because the path is absolute, moving the project directory or restoring onto another machine breaks every reference even with the audio present `[observed]` |
 
 ## 6. Trust boundaries and account topology
 
@@ -211,7 +211,7 @@ Authority changes hands in exactly three places `[observed]`:
 | # | Requirement | Grade | Source | Test |
 |---|---|---|---|---|
 | R1 | An event groups submissions and fixes the rubric they are judged against | observed | `db.create_event`, `api_create_submission` | `TestEvents` |
-| R2 | An event created without a named rubric takes the most recently created rubric | observed | `rubrics.get_default_rubric_id`, `db.list_rubrics` orders by `created_at DESC` | none |
+| R2 | An event created without a named rubric takes the most recently created rubric | observed | `rubrics.get_default_rubric_id`, `db.list_rubrics` orders by `created_at DESC` | `TestTheDefaultRubric` |
 | R3 | Every `*.yaml` in `rubrics/` loads into the database at startup, keyed by name, idempotently | observed | `rubrics.sync_rubrics_to_db` | `TestAFreshCloneComesUpUsable` |
 | R4 | A fresh install with no database builds one on first start and can judge immediately | observed | lifespan, `db.init_db` | `TestAFreshCloneComesUpUsable` |
 | R5 | A recording is transcribed, scored against the rubric, and read back aloud in one operation | observed | `api_judge_submission` | `TestJudging`, `judge.spec.ts` |
@@ -237,14 +237,19 @@ Authority changes hands in exactly three places `[observed]`:
 | R25 | An upload larger than the ceiling is refused and leaves no partial file | observed | `_write_upload` | `TestUploadLimits` |
 | R26 | Every external call retries three times on a transient failure with exponential backoff | observed | `retry` decorator | `TestRetry` |
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
-| R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | none, verified by hand |
+| R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
-| R30 | The event record is one file, and copying it is a complete backup | intended: README | README, "Data" | none |
+| R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Twenty-eight of thirty are observed and two rest only on the README. Twenty-six
-carry a test. The four without one, R2, R19, R28 and R30, are `harvest` items.
-R19 and R30 are the ones most worth closing, because each is a claim an operator
-will rely on at an event and neither has been read against the code.
+Twenty-nine of thirty are observed and one rests only on the README.
+Twenty-nine carry a test. The one without, R19, is a process instruction to the
+operator rather than a behaviour of the system, so no test can hold it.
+
+R30 was `[intended: README]` on the first pass and is now `[observed]`, because
+writing its test showed the README's claim was wrong: it told operators that
+copying `judge.db` captured the full history, while every recording sat outside
+it in a directory referenced by absolute path. The requirement was corrected
+before the test was written.
 
 ## 8. Operations
 
@@ -261,7 +266,7 @@ overnight or unattended run has no way to report anything.
 | Failure visibility | Each pipeline stage sets `submissions.status` to `error` and returns a 500 naming the stage. The browser prints it and re-enables recording | observed |
 | Retry | Three attempts with exponential backoff on transient provider failures, on transcription, scoring, speech and PRFAQ generation | observed |
 | Logging | `logging` at warning and error only, unconfigured, so it inherits uvicorn's handler | observed |
-| Backup | Copying `judge.db` is a complete backup of the record. Audio lives beside it and is not covered by that copy | observed |
+| Backup | `judge.db` plus `audio_recordings/`. The database refers to recordings by **absolute path**, so a restore into a different directory or onto a different machine breaks every audio reference even when the files were copied | observed |
 | Reset | `npm run db:reset`, `npm run audio:clean`, `npm run reset` | observed |
 | Schema change | A pre-events database is copied aside before the destructive migration and the location is logged | observed |
 | Capacity | Untested. Nothing establishes how many teams one event can hold or how the finalist prompt behaves at twenty teams | undecided |

@@ -74,10 +74,9 @@ every submission, score, review and PRFAQ in it. It copies the file to
 `judge.pre-migration-{timestamp}.db` first and logs where, so the old record is
 recoverable, but the running database will be empty.
 
-`judge.db` is the whole event record. Seven tables: `rubrics`, `events`,
-`submissions` (transcripts included), `scores`, `reviews`, `finalist_runs`, and
-`prfaqs`. It is gitignored, it never leaves the machine, and copying that one file
-is a complete backup.
+`judge.db` holds seven tables: `rubrics`, `events`, `submissions` (transcripts
+included), `scores`, `reviews`, `finalist_runs`, and `prfaqs`. It is gitignored
+and it never leaves the machine. It does not hold audio.
 
 Confirm the tables and the rubric landed:
 
@@ -350,7 +349,12 @@ virtual-judge/
 
 ## Data
 
-Everything lives in `judge.db` (SQLite). This file is your complete event record — back it up after the event.
+Scores, transcripts, reviews, PRFAQs and finalist rounds live in `judge.db`
+(SQLite). **The recordings do not.** They sit in `audio_recordings/`, and the
+database refers to them by absolute path, so a backup is both directories or it
+is not a backup. Restoring `judge.db` alone gives you every score and every
+transcript, and every audio player in the UI pointing at a file that is not
+there.
 
 `judge.db`, `audio_recordings/` and `exports/` are all gitignored, and they must
 stay that way. They hold recordings of real people pitching, their transcripts,
@@ -371,7 +375,7 @@ sqlite3 judge.db "SELECT team_name, overall_score FROM submissions s JOIN review
 - **External mic** — laptop mics pick up room noise; a USB mic pointed at the presenter helps
 - **Quiet moment** — the 30s processing time is a natural pause; use it for applause or transition
 - **Consent** — mention to teams that pitches are recorded and AI-judged (event organizers handle this)
-- **Backup** — copy `judge.db` after the event; it's the full history
+- **Backup** — copy `judge.db` **and** `audio_recordings/` after the event. The database alone is the scores without the pitches
 - **PRFAQs come after** — don't run them between teams. Generate them once the room has cleared, then export and send
 
 ## Stack
