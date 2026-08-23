@@ -289,11 +289,31 @@ DISCLAIMER = """> ## ⚠️ Read this first
 > customer, or a grant committee.**"""
 
 
+def normalize_grade(grade) -> str:
+    """Fold whatever the model wrote into one of the three grades.
+
+    A model that answers "Unproven" or "Not tested" used to be counted under
+    its own key, which nothing reads. The frontmatter then printed a total that
+    did not equal the sum of its three grades, in a document whose stated point
+    is that the counts survive being pasted somewhere else.
+
+    Anything unrecognised becomes Untested, which is the same direction the
+    prompt's own rule points: a claim that has not demonstrably been tested is
+    Untested.
+    """
+    if not grade:
+        return "Untested"
+    folded = " ".join(str(grade).split()).lower()
+    for known in GRADES:
+        if folded == known.lower():
+            return known
+    return "Untested"
+
+
 def _grade_counts(assumptions: list) -> dict:
     counts = {g: 0 for g in GRADES}
     for a in assumptions:
-        grade = a.get("grade", "Untested")
-        counts[grade] = counts.get(grade, 0) + 1
+        counts[normalize_grade(a.get("grade"))] += 1
     return counts
 
 
@@ -525,7 +545,7 @@ def render_markdown(prfaq: dict, team_name: str, event_name: str = "",
             out.extend([
                 heading,
                 "",
-                f"**Grade:** {a.get('grade', 'Untested')}",
+                f"**Grade:** {normalize_grade(a.get('grade'))}",
                 "",
                 a.get("evidence", ""),
                 "",

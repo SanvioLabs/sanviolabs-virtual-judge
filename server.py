@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from pydantic import BaseModel
 
 from judge import db, openrouter
@@ -56,6 +56,10 @@ if _env_path.exists():
 
 
 logger = logging.getLogger(__name__)
+
+# A five minute pitch is a couple of megabytes. This is a ceiling against a
+# runaway or hostile upload, not a limit anyone should meet.
+MAX_UPLOAD_BYTES = int(os.environ.get("VJ_MAX_UPLOAD_MB", "100")) * 1024 * 1024
 
 AUDIO_DIR = Path(__file__).parent / "audio_recordings"
 AUDIO_DIR.mkdir(exist_ok=True)
@@ -113,6 +117,25 @@ def _safe_component(value: str, fallback: str = "unnamed") -> str:
     if not cleaned:
         return fallback
     return cleaned[:80]
+
+
+# Excel and Sheets treat a leading =, +, - or @ as the start of a formula, and
+# a team name is typed by whoever is at the keyboard, or posted by anyone on the
+# network since the API has no auth. The results CSV gets mailed around after
+# the event, so a cell has to stay a cell.
+_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_cell(value):
+    """Neutralise a spreadsheet formula without changing what the text says."""
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value)
+    if text.startswith(_FORMULA_LEADERS):
+        return "'" + text
+    return text
 
 
 def _norm_category(name: str) -> str:
@@ -362,10 +385,28 @@ async def api_upload_audio(sub_id: str, file: UploadFile):
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
 
+    # Streamed with a ceiling rather than read whole. A pitch is a couple of
+    # megabytes; the previous read() pulled whatever arrived into memory before
+    # anything looked at its size.
     audio_path = AUDIO_DIR / f"{sub_id}.webm"
-    content = await file.read()
-    with open(audio_path, "wb") as f:
-        f.write(content)
+    written = 0
+    try:
+        with open(audio_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise ValueError("too large")
+                f.write(chunk)
+    except ValueError:
+        audio_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Recording is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+        )
+
+    if written == 0:
+        audio_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Uploaded recording is empty")
 
     db.update_submission(sub_id, audio_path=str(audio_path), status="transcribing")
     return {"status": "uploaded", "audio_path": str(audio_path)}
@@ -770,7 +811,7 @@ async def api_export_csv(event_id: str):
             review["summary"] if review else "",
             sub["status"],
         ]
-        writer.writerow(row)
+        writer.writerow([_csv_cell(cell) for cell in row])
 
     # Add finalist results if available
     finalist = db.get_latest_finalist_run(event_id)
@@ -778,10 +819,14 @@ async def api_export_csv(event_id: str):
         writer.writerow([])
         writer.writerow(["--- FINALIST RESULTS ---"])
         for pick in finalist["top_picks"]:
-            writer.writerow([f"#{pick['rank']}", pick["team_name"], pick["reasoning"]])
+            writer.writerow([_csv_cell(c) for c in
+                             (f"#{pick['rank']}", pick["team_name"], pick["reasoning"])])
 
+    # Response, not JSONResponse. JSONResponse encodes its content, so the whole
+    # file arrived as one JSON string with the line breaks escaped, which opens
+    # in a spreadsheet as a single cell of nonsense.
     content = output.getvalue()
-    return JSONResponse(
+    return Response(
         content=content,
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=results_{_safe_component(event['name'], 'event')}.csv"},

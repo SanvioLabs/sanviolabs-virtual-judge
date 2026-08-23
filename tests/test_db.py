@@ -1,6 +1,7 @@
 """Tests for the database and rubric modules."""
 
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
@@ -297,3 +298,71 @@ class TestSubmissionCounts:
         rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
         empty = db.create_event("Empty", rubric_id, "")
         assert empty not in db.submission_counts_by_event()
+
+
+class TestConnectionsAlwaysClose:
+    """Every function used to open a connection and close it on the last line,
+    so anything that raised in between leaked the handle. Under WAL a leaked
+    handle holds a read transaction open and the log stops checkpointing."""
+
+    def test_the_context_manager_closes_on_success(self):
+        with db.connection() as conn:
+            conn.execute("SELECT 1")
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+
+    def test_the_context_manager_closes_when_the_body_raises(self):
+        with pytest.raises(RuntimeError):
+            with db.connection() as conn:
+                raise RuntimeError("boom")
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+
+    def test_a_failing_delete_does_not_leak(self):
+        # delete_submission raises KeyError before it finishes. The handle it
+        # opened first still has to close.
+        for _ in range(50):
+            with pytest.raises(KeyError):
+                db.delete_submission("does-not-exist")
+        # 50 leaked handles would show up here.
+        assert db.list_events() == []
+
+
+class TestUpdateColumnsAreNotFreeText:
+    """The column has to be interpolated, because SQLite takes no parameter in
+    that position. The whitelist is what keeps that safe."""
+
+    def _sub(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("E", rubric_id, "")
+        return db.create_submission("T", event_id, rubric_id), event_id
+
+    def test_a_real_column_still_updates(self):
+        sub_id, _ = self._sub()
+        db.update_submission(sub_id, status="complete", transcript="hello")
+        row = db.get_submission(sub_id)
+        assert row["status"] == "complete"
+        assert row["transcript"] == "hello"
+
+    def test_an_unknown_submission_column_is_refused(self):
+        sub_id, _ = self._sub()
+        with pytest.raises(ValueError) as exc:
+            db.update_submission(sub_id, nonsense="x")
+        assert "nonsense" in str(exc.value)
+
+    def test_an_injection_attempt_is_refused_before_it_reaches_sql(self):
+        sub_id, _ = self._sub()
+        with pytest.raises(ValueError):
+            db.update_submission(sub_id, **{"status = 'x' WHERE 1=1 --": "y"})
+        # And the row is untouched.
+        assert db.get_submission(sub_id)["status"] == "recording"
+
+    def test_an_unknown_event_column_is_refused(self):
+        _, event_id = self._sub()
+        with pytest.raises(ValueError):
+            db.update_event(event_id, nonsense="x")
+
+    def test_a_real_event_column_still_updates(self):
+        _, event_id = self._sub()
+        db.update_event(event_id, name="Renamed")
+        assert db.get_event(event_id)["name"] == "Renamed"

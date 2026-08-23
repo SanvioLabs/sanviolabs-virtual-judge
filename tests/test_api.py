@@ -1,5 +1,7 @@
 """Full API test suite — covers all endpoints, happy paths, and error cases."""
 
+import csv
+import io
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -565,11 +567,15 @@ class TestExport:
 
         res = await client.get(f"/api/events/{event_id}/export/csv")
         assert res.status_code == 200
-        content = res.json()  # Comes as JSON-wrapped string
-        assert "Team" in content
-        assert "CSV Team" in content
-        assert "Impact" in content
-        assert "Innovation" in content
+        assert res.headers["content-type"].startswith("text/csv")
+
+        # Parsed as a real CSV, not as a JSON string. This used to come back
+        # JSON-encoded, which opens in a spreadsheet as one cell of nonsense.
+        rows = list(csv.reader(io.StringIO(res.text)))
+        assert rows[0][0] == "Team"
+        assert any(r and r[0] == "CSV Team" for r in rows)
+        assert "Impact" in rows[0]
+        assert "Innovation" in rows[0]
 
     @patch("server.transcribe_audio")
     @patch("server.score_submission")
@@ -613,8 +619,8 @@ class TestExport:
         event_id = await _get_event_id(client)
         res = await client.get(f"/api/events/{event_id}/export/csv")
         assert res.status_code == 200
-        content = res.json()
-        assert "Team" in content  # Header row present
+        rows = list(csv.reader(io.StringIO(res.text)))
+        assert rows[0][0] == "Team"
 
 
 # --- Serving ---
@@ -795,3 +801,99 @@ class TestSpokenVerdictPersistence:
         # It is the text actually handed to the voice, and it is persisted.
         assert mock_speak.call_args.args[0] == spoken
         assert db.get_review(sub["id"])["spoken_text"] == spoken
+
+
+class TestUploadLimits:
+    """The upload used to be read whole into memory before anything checked
+    its size, on a server that binds 0.0.0.0 in event mode with no auth."""
+
+    @pytest.mark.asyncio
+    async def test_a_normal_recording_uploads(self, app, tmp_db):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+            events = (await ac.get("/api/events")).json()
+            sub = (await ac.post("/api/submissions", json={
+                "team_name": "Normal", "event_id": events[0]["id"]})).json()
+            res = await ac.post(
+                f"/api/submissions/{sub['id']}/audio",
+                files={"file": ("p.webm", b"x" * 8192, "audio/webm")},
+            )
+            assert res.status_code == 200
+            assert res.json()["status"] == "uploaded"
+
+    @pytest.mark.asyncio
+    async def test_an_oversized_recording_is_refused(self, app, tmp_db, monkeypatch):
+        monkeypatch.setattr(server, "MAX_UPLOAD_BYTES", 4096)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+            events = (await ac.get("/api/events")).json()
+            sub = (await ac.post("/api/submissions", json={
+                "team_name": "Huge", "event_id": events[0]["id"]})).json()
+            res = await ac.post(
+                f"/api/submissions/{sub['id']}/audio",
+                files={"file": ("p.webm", b"x" * 20000, "audio/webm")},
+            )
+            assert res.status_code == 413
+            assert "larger than" in res.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_the_partial_file_is_not_left_behind(self, app, tmp_db, monkeypatch):
+        monkeypatch.setattr(server, "MAX_UPLOAD_BYTES", 4096)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+            events = (await ac.get("/api/events")).json()
+            sub = (await ac.post("/api/submissions", json={
+                "team_name": "Partial", "event_id": events[0]["id"]})).json()
+            await ac.post(
+                f"/api/submissions/{sub['id']}/audio",
+                files={"file": ("p.webm", b"x" * 20000, "audio/webm")},
+            )
+            assert not (server.AUDIO_DIR / f"{sub['id']}.webm").exists()
+            # And the submission was not marked as having audio.
+            assert (await ac.get(f"/api/submissions/{sub['id']}")).json()["audio_path"] is None
+
+    @pytest.mark.asyncio
+    async def test_an_empty_recording_is_refused(self, app, tmp_db):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+            events = (await ac.get("/api/events")).json()
+            sub = (await ac.post("/api/submissions", json={
+                "team_name": "Empty", "event_id": events[0]["id"]})).json()
+            res = await ac.post(
+                f"/api/submissions/{sub['id']}/audio",
+                files={"file": ("p.webm", b"", "audio/webm")},
+            )
+            assert res.status_code == 400
+            assert not (server.AUDIO_DIR / f"{sub['id']}.webm").exists()
+
+
+
+class TestTheCsvIsSafeToOpen:
+    """The results CSV gets mailed to organisers and teams. A spreadsheet reads
+    a leading =, +, - or @ as a formula, and team names are typed by whoever is
+    at the keyboard or posted by anyone on the network."""
+
+    async def _event_with_team(self, client, team_name):
+        event_id = await _get_event_id(client)
+        await client.post("/api/submissions",
+                          json={"team_name": team_name, "event_id": event_id})
+        res = await client.get(f"/api/events/{event_id}/export/csv")
+        return list(csv.reader(io.StringIO(res.text)))
+
+    async def test_a_formula_is_neutralised(self, client):
+        rows = await self._event_with_team(client, "=cmd|'/c calc'!A1")
+        cell = [r[0] for r in rows if r and "cmd" in r[0]][0]
+        assert cell.startswith("'")
+        assert not cell.startswith("=")
+
+    @pytest.mark.parametrize("leader", ["=", "+", "-", "@"])
+    async def test_every_formula_leader_is_covered(self, client, leader):
+        rows = await self._event_with_team(client, f"{leader}SUM(A1:A9)")
+        cell = [r[0] for r in rows if r and "SUM" in r[0]][0]
+        assert cell.startswith("'")
+
+    async def test_an_ordinary_name_is_left_alone(self, client):
+        rows = await self._event_with_team(client, "Normal Team")
+        assert any(r and r[0] == "Normal Team" for r in rows)
+
+    async def test_the_name_is_still_readable(self, client):
+        # Neutralised, not censored. The organiser still sees what was typed.
+        rows = await self._event_with_team(client, "=Weird Name")
+        cell = [r[0] for r in rows if r and "Weird" in r[0]][0]
+        assert cell == "'=Weird Name"

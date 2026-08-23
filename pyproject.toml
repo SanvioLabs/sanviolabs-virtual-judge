@@ -22,4 +22,8 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Pinned rather than left to the default, which pytest-asyncio warns about on
+# every run and intends to change.
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning"]

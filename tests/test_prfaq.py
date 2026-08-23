@@ -511,3 +511,48 @@ class TestPrfaqExport:
 
         data = (await client.get(f"/api/events/{event_id}/export/json")).json()
         assert data["submissions"][0]["prfaq"]["assumptions"]
+
+
+class TestGradeTallyAlwaysAddsUp:
+    """The frontmatter carries the counts so they survive being pasted
+    elsewhere. A total that does not equal the sum of its parts is worse than
+    no total, because it looks authoritative."""
+
+    def test_the_three_known_grades_are_kept(self):
+        for g in ("Tested", "Partly tested", "Untested"):
+            assert prfaq.normalize_grade(g) == g
+
+    def test_case_and_spacing_do_not_matter(self):
+        assert prfaq.normalize_grade("partly   TESTED") == "Partly tested"
+        assert prfaq.normalize_grade("  untested ") == "Untested"
+
+    def test_anything_unrecognised_becomes_untested(self):
+        for g in ("Unproven", "Not tested", "unknown", "", None, 7):
+            assert prfaq.normalize_grade(g) == "Untested"
+
+    def test_the_counts_sum_to_the_total(self):
+        assumptions = [
+            {"grade": "Tested"}, {"grade": "Partly tested"}, {"grade": "Untested"},
+            {"grade": "Unproven"}, {"grade": None}, {},
+        ]
+        counts = prfaq._grade_counts(assumptions)
+        assert sum(counts.values()) == len(assumptions)
+        assert set(counts) == {"Tested", "Partly tested", "Untested"}
+
+    def test_the_rendered_frontmatter_adds_up(self):
+        content = {**SAMPLE, "assumptions": [
+            {"assumption": "a", "grade": "Tested", "evidence": ""},
+            {"assumption": "b", "grade": "Unproven", "evidence": ""},
+        ]}
+        md = prfaq.render_markdown(content, "NovaMind")
+        import re
+        vals = {k: int(v) for k, v in re.findall(r"^assumptions_(\w+): (\d+)$", md, re.M)}
+        assert vals["total"] == vals["untested"] + vals["partly_tested"] + vals["tested"]
+
+    def test_the_body_shows_the_grade_it_was_counted_as(self):
+        content = {**SAMPLE, "assumptions": [
+            {"assumption": "a", "grade": "Unproven", "evidence": ""},
+        ]}
+        md = prfaq.render_markdown(content, "NovaMind")
+        assert "**Grade:** Untested" in md
+        assert "Unproven" not in md

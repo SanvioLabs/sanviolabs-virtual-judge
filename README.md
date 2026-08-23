@@ -296,6 +296,7 @@ virtual-judge/
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/` | The web UI |
 | `GET` | `/api/health` | Health check — key presence, models, counts. Add `?verify=1` for a live provider check |
 | `GET` | `/api/rubrics` | List available rubrics |
 | `GET` | `/api/events` | List all events |
@@ -310,6 +311,7 @@ virtual-judge/
 | `DELETE` | `/api/submissions/:id` | Delete one submission, its scores, review, PRFAQ and audio. For the recording started on the wrong team |
 | `POST` | `/api/submissions/:id/prfaq` | Write the team's PRFAQ. Returns the stored one unless `?force=true` |
 | `GET` | `/api/submissions/:id/prfaq` | Get a previously generated PRFAQ |
+| `GET` | `/api/submissions/:id/prfaq/download` | Download the PRFAQ as a Markdown file |
 | `POST` | `/api/events/:id/prfaqs` | Write PRFAQs for every judged team. Returns generated / skipped / failed |
 | `POST` | `/api/events/:id/finalist` | Run finalist comparison, pick top 3 |
 | `GET` | `/api/events/:id/finalist/latest` | Get most recent finalist results |
