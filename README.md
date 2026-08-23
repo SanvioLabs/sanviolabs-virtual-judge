@@ -168,42 +168,10 @@ Each one is generated from that team's pitch transcript and nothing else:
 | **4. Assumptions ledger** | today | Every load-bearing claim graded **Tested**, **Partly tested**, or **Untested** |
 | **5. What would change our mind** | today | Checkable signals that would mean the thesis is wrong |
 
-Four rules make the document work, and all four are enforced in code rather than
-left to the model:
-
-**The two voices don't mix.** Sections 1 and 2 are confident and past tense. All
-the doubt lives in 3 and 4. A caveat in the press release destroys the document
-twice over — it stops reading like a launch, and it lets the writer feel a gap has
-been handled when it has only been mentioned. The gaps are meant to become visible
-by *contrast*.
-
-**A claim made in a pitch is Untested.** Confidence is not evidence. Most rows in a
-hackathon ledger will be Untested, and that is the correct outcome — it is what a
-pitch *is*. Grading generously makes the ledger worthless.
-
-**The paired check.** Every caveat kept out of sections 1 and 2 has to reappear as
-a ledger row. A clean announcement above a short ledger is worse than a hedged
-one, because the gaps were deleted rather than moved. No price in the FAQ means
-"there is a price" is a row.
-
-**The press release runs in the Amazon order, and the order is load-bearing.** The
-team's quote sits straight after the mechanism, because a spokesperson says *why
-this was built* before the reader is told how to use it. The customer quote sits
-after Getting started, because it is someone reporting back from having done
-exactly that. Quotes bunched at the end read as a product brief, not a launch. A
-stated launch date becomes a dateline; an unstated one becomes a ledger row.
-
-**No roadmap language in sections 1 and 2.** "Not yet," "planned," "in
-development," and "we're working on it" turn an announcement back into a status
-update. A real limit at launch is stated as a fact of the shipped product: "it
-supports primary care and orthopedics," not "other specialties are planned."
-
-**The founder quote is never invented.** Most pitches describe the product, not
-the reason for it. When the transcript carries no founding account the generator
-returns nothing and the document prints a production placeholder asking the team
-for one. Writing a founding motivation for someone who never stated one is the
-exact failure the format exists to prevent, and it is the one place a PRFAQ
-becomes a lie rather than a draft.
+The rules the document is written to, the two voices that must not mix, strict
+grading, the paired check, the Amazon section order, and no roadmap language in
+the launch sections, are stated in the system prompt in `judge/prfaq.py`. Change
+how the documents read by changing it there.
 
 The disclaimer, the invented-customer label, the missing-quote placeholder, and
 the provenance block are rendered in Python, not requested from the model, so a

@@ -4,8 +4,8 @@ This is the artifact the team walks away with. Scoring tells them where they
 placed; the PRFAQ tells them what they actually built and what they have not yet
 proven.
 
-Two rules carry the whole document, and both are enforced here rather than left
-to the model:
+Two rules carry the whole document. Both are instructions to the model, written
+into SYSTEM_PROMPT below rather than validated here:
 
 1. **The press release and customer FAQ are written from inside the launch** —
    confident, past tense, no hedging. The Hard FAQ and the assumptions ledger are
