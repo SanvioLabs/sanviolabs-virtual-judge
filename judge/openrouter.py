@@ -125,6 +125,71 @@ def complete_json(client, model: str, messages: list, max_tokens: int,
     return extract_json(message_content(response, what))
 
 
+def _repair_common_faults(text: str) -> str:
+    """Fix the two model JSON mistakes that have exactly one right reading.
+
+    A raw newline, tab or carriage return inside a JSON string is always
+    invalid, and escaping it preserves exactly what the model wrote. A comma
+    immediately before a closing brace or bracket is always surplus.
+
+    Nothing else is guessed at. An unescaped quote inside a string, which is
+    the other common fault, has no single correct repair: the parser cannot
+    tell content from delimiter, and a wrong guess silently changes a score's
+    rationale. That case is reported instead.
+
+    Both repairs run one pass, tracking whether the cursor is inside a string,
+    so neither reaches into string content.
+    """
+    out = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            elif ch in "\n\r\t":
+                # The fault: a control character the model did not escape.
+                out.append({"\n": "\\n", "\r": "\\r", "\t": "\\t"}[ch])
+                continue
+            out.append(ch)
+            continue
+
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            continue
+
+        if ch in "}]":
+            # Walk back over whitespace; drop a comma sitting behind it.
+            k = len(out) - 1
+            while k >= 0 and out[k] in " \t\r\n":
+                k -= 1
+            if k >= 0 and out[k] == ",":
+                del out[k]
+        out.append(ch)
+
+    return "".join(out)
+
+
+def _describe_parse_failure(text: str, error: json.JSONDecodeError) -> str:
+    """Say what broke and show the text around it.
+
+    The old message printed the first 200 characters of the response, which is
+    almost never where the fault is. This one carries the decoder's own reason,
+    its position, and a window either side of it.
+    """
+    at = max(error.pos, 0)
+    window = text[max(0, at - 80): at + 80].replace("\n", "\\n")
+    return (
+        f"{error.msg} at line {error.lineno} column {error.colno} "
+        f"(char {at}). Around it: ...{window}..."
+    )
+
+
 def extract_json(text: str) -> dict:
     """Pull a JSON object out of a model response.
 
@@ -150,16 +215,27 @@ def extract_json(text: str) -> dict:
     except json.JSONDecodeError:
         pass
 
+    # Two model mistakes have one correct reading each. Try them before giving
+    # up, because a whole team's scores otherwise die on a stray newline.
+    repaired = _repair_common_faults(text)
+    if repaired != text:
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+
     # Prose before or after the object: decode the first complete value at the
     # opening brace and ignore whatever trails it.
     start = text.find("{")
+    last_error = None
     if start != -1:
-        try:
-            value, _ = json.JSONDecoder().raw_decode(text, start)
-            if isinstance(value, dict):
-                return value
-        except json.JSONDecodeError:
-            pass
+        for candidate in (text, repaired):
+            try:
+                value, _ = json.JSONDecoder().raw_decode(candidate, start)
+                if isinstance(value, dict):
+                    return value
+            except json.JSONDecodeError as e:
+                last_error = e
 
         # Nothing complete parsed. If the braces do not balance, the body stops
         # partway through an object rather than being malformed, which means the
@@ -171,8 +247,13 @@ def extract_json(text: str) -> dict:
                 "Raise max_tokens for this call."
             )
 
+    if last_error is not None:
+        raise UnparseableResponse(
+            f"Could not parse JSON from the model response: "
+            f"{_describe_parse_failure(text, last_error)}"
+        )
     raise UnparseableResponse(
-        f"Could not parse JSON from model response: {text[:200]}"
+        f"The model response contains no JSON object: {text[:200]}"
     )
 
 

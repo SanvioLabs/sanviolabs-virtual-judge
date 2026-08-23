@@ -240,6 +240,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R51 | A model response that is valid apart from control characters inside strings, or a trailing comma, is repaired and parsed. Anything else reports the decoder's own reason, its position, and the text around it | observed | `_repair_common_faults`, `_describe_parse_failure` | `TestModelJsonThatIsNearlyValid` |
 | R50 | Every error the operator can act on is shown on screen, in a place visible from the view they are in. Nothing is reported to the console alone | observed | `notify`, `#app-status` | `e2e/error-visibility.spec.ts` |
 | R49 | Re-judging reuses the stored transcript. Transcription runs only when there is none, or when `?retranscribe=true` asks for it, which is the case where the transcript itself was wrong | observed | `_judge_submission` | `TestRejudgingAJudgedTeam` |
 | R48 | A judged team can be re-judged from the Submissions tab. The new scores and review replace the old ones per R31. It confirms first, because it replaces a result that may already have been read out | observed | `rejudgeOne`, `_judge_submission` | `TestRejudgingAJudgedTeam`, `judge-later.spec.ts` |
@@ -262,8 +263,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Forty-nine of fifty are observed and one rests only on the README. Forty-nine
-carry a test. The one without, R19, is a process instruction to
+Fifty of fifty-one are observed and one rests only on the README. Fifty carry
+a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
@@ -334,6 +335,12 @@ pipeline, the PRFAQ generator, and the export builders.
 | **`#status` is scoped to the Judge view.** It is the right place for the
 recording flow and the wrong place for anything else, which is why R50 added a
 surface outside every view rather than moving it | `static/index.html` | observed |
+
+| **An unescaped quote inside a string can be reported as truncation.** It
+leaves the scanner inside a string at the end of the text, which looks identical
+to a response that stopped early, and the advice attached to that message, raise
+max_tokens, is wrong for this cause. Both are retried, so it costs a misleading
+log line rather than a failed judging | `_unbalanced` | observed |
 
 Findings, not requirements. Nobody should preserve these by reading this
 document. Four of the six recorded on the first pass have since been specified

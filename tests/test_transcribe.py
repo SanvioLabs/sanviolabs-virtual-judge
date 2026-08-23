@@ -1,6 +1,7 @@
 """Tests for OpenRouter-backed transcription and the shared client helpers."""
 
 import base64
+import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -120,9 +121,27 @@ class TestExtractJson:
         with pytest.raises(ValueError, match="empty response"):
             extract_json("")
 
-    def test_unparseable_raises(self):
-        with pytest.raises(UnparseableResponse, match="Could not parse JSON"):
+    def test_a_response_with_no_json_at_all_says_exactly_that(self):
+        """Distinct from JSON that will not parse. A model that answered in
+        prose and a model that emitted broken JSON need different fixes."""
+        with pytest.raises(UnparseableResponse, match="contains no JSON object"):
             extract_json("I refuse to answer.")
+
+    def test_json_that_will_not_parse_says_why(self):
+        with pytest.raises(UnparseableResponse, match="Could not parse JSON"):
+            extract_json('{"scores": [], "summary": "they call it a "context graph" inside"}')
+
+    def test_an_unescaped_quote_can_read_as_truncation(self):
+        """A known limit, recorded rather than papered over.
+
+        An unescaped quote leaves the scanner inside a string at the end of the
+        text, which is indistinguishable from a response that stopped early. It
+        is reported as truncation and its advice, raise max_tokens, is wrong for
+        this cause. Both are retried and a re-roll usually fixes either, so the
+        cost is a misleading line in the log rather than a failed judging.
+        """
+        with pytest.raises(TruncatedResponse):
+            extract_json('{"summary": "an unescaped " quote"}')
 
     def test_a_document_cut_off_midway_reads_as_truncated(self):
         """The failure that used to surface as a syntax error hundreds of lines in.
@@ -209,3 +228,62 @@ class TestModelSelection:
         monkeypatch.setenv("OPENROUTER_TRANSCRIPTION_MODEL", "google/gemini-2.5-flash")
         assert scoring_model() == "openai/gpt-5.4"
         assert transcription_model() == "google/gemini-2.5-flash"
+
+
+class TestModelJsonThatIsNearlyValid:
+    """SPEC.md R51.
+
+    Pat's event hit this: `score_submission attempt 1 failed: Could not parse
+    JSON from model response`. Four different model mistakes all collapsed into
+    that one message, and it showed the first 200 characters of the response,
+    which is not where the fault is.
+
+    Two of them are unambiguously repairable. A raw newline or tab inside a
+    JSON string is always invalid and escaping it preserves exactly what the
+    model meant. A comma before a closing brace is always surplus. The other
+    two are not repairable and must say precisely what went wrong instead.
+    """
+
+    def test_a_literal_newline_inside_a_rationale_is_repaired(self):
+        payload = '{"scores": [{"category": "Impact", "score": 4, "rationale": "They tested it on real\nusers."}], "summary": "ok"}'
+        out = extract_json(payload)
+        assert out["scores"][0]["rationale"] == "They tested it on real\nusers."
+
+    def test_a_literal_tab_is_repaired(self):
+        out = extract_json('{"summary": "one\ttwo"}')
+        assert out["summary"] == "one\ttwo"
+
+    def test_a_carriage_return_is_repaired(self):
+        out = extract_json('{"summary": "one\r\ntwo"}')
+        assert "two" in out["summary"]
+
+    def test_a_trailing_comma_before_a_brace_is_dropped(self):
+        assert extract_json('{"summary": "ok",}') == {"summary": "ok"}
+
+    def test_a_trailing_comma_before_a_bracket_is_dropped(self):
+        out = extract_json('{"scores": [1, 2, 3,], "summary": "ok"}')
+        assert out["scores"] == [1, 2, 3]
+
+    def test_a_comma_inside_a_string_is_left_alone(self):
+        """The repair must not reach inside string content."""
+        out = extract_json('{"summary": "a list, ] and a brace, } in prose"}')
+        assert out["summary"] == "a list, ] and a brace, } in prose"
+
+    def test_valid_json_is_untouched(self):
+        payload = '{"scores": [{"category": "A", "score": 5, "rationale": "clean"}], "summary": "s"}'
+        assert extract_json(payload) == json.loads(payload)
+
+    def test_an_unrepairable_response_names_the_reason_and_the_place(self):
+        """An unescaped quote is genuinely ambiguous, so it is diagnosed rather
+        than guessed at. The message has to be enough to act on."""
+        payload = '{"summary": "they call it a "context graph" internally"}'
+        with pytest.raises(UnparseableResponse) as exc:
+            extract_json(payload)
+        message = str(exc.value)
+        assert "column" in message.lower() or "char" in message.lower()
+        assert "context graph" in message, "the message does not show where it broke"
+
+    def test_a_truncated_response_is_still_reported_as_truncated(self):
+        """Not misfiled as a formatting problem: the fix is different."""
+        with pytest.raises(TruncatedResponse):
+            extract_json('{"scores": [{"category": "Impact", "rationale": "cut off here')
