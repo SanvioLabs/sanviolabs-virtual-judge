@@ -71,37 +71,43 @@ class TestTheFinalistRoundReadsThePitch:
         # Real transcripts in the wild run to roughly 4,700 characters.
         assert llm.FINALIST_TRANSCRIPT_CHARS >= 4700
 
-    def _prompt_for(self, transcript):
+    @pytest.fixture(autouse=True)
+    def _no_network(self, monkeypatch):
+        """Build no client and make no call.
+
+        _get_client reads OPENROUTER_API_KEY, so without this the test only
+        passes on a machine that happens to have a real key in its
+        environment. CI does not, and said so.
+        """
+        monkeypatch.setattr(llm, "_get_client", lambda: object())
+
+    def _prompt_for(self, transcript, monkeypatch):
         captured = {}
 
         def fake(client, model, messages, max_tokens, what="response", **kw):
             captured["user"] = messages[1]["content"]
             return {"top_picks": [], "reasoning": ""}
 
-        original = llm.complete_json
-        llm.complete_json = fake
-        try:
-            llm.run_finalist_round(
-                [{"team_name": "A", "transcript": transcript, "scores": [], "overall_score": 4.0}],
-                {"categories": [{"name": "Impact"}], "scale_max": 5},
-            )
-        finally:
-            llm.complete_json = original
+        monkeypatch.setattr(llm, "complete_json", fake)
+        llm.run_finalist_round(
+            [{"team_name": "A", "transcript": transcript, "scores": [], "overall_score": 4.0}],
+            {"categories": [{"name": "Impact"}], "scale_max": 5},
+        )
         return captured["user"]
 
-    def test_a_whole_pitch_is_sent_whole(self):
+    def test_a_whole_pitch_is_sent_whole(self, monkeypatch):
         transcript = "word " * 900  # ~4,500 chars, a full pitch
-        prompt = self._prompt_for(transcript)
+        prompt = self._prompt_for(transcript, monkeypatch)
         assert transcript.strip()[-40:] in prompt
 
-    def test_a_complete_transcript_is_not_labelled_an_excerpt(self):
-        prompt = self._prompt_for("a short pitch")
+    def test_a_complete_transcript_is_not_labelled_an_excerpt(self, monkeypatch):
+        prompt = self._prompt_for("a short pitch", monkeypatch)
         assert "Transcript:" in prompt
         assert "Transcript excerpt:" not in prompt
         assert "a short pitch..." not in prompt
 
-    def test_an_overlong_transcript_is_cut_and_says_so(self):
-        prompt = self._prompt_for("x" * (llm.FINALIST_TRANSCRIPT_CHARS + 500))
+    def test_an_overlong_transcript_is_cut_and_says_so(self, monkeypatch):
+        prompt = self._prompt_for("x" * (llm.FINALIST_TRANSCRIPT_CHARS + 500), monkeypatch)
         assert "Transcript excerpt:" in prompt
         # Read the excerpt back out of the prompt rather than counting "x"
         # across the whole string, since the word "excerpt" carries one.
@@ -109,6 +115,6 @@ class TestTheFinalistRoundReadsThePitch:
         assert body.endswith("...")
         assert len(body[:-3]) == llm.FINALIST_TRANSCRIPT_CHARS
 
-    def test_a_missing_transcript_does_not_crash(self):
-        prompt = self._prompt_for(None)
+    def test_a_missing_transcript_does_not_crash(self, monkeypatch):
+        prompt = self._prompt_for(None, monkeypatch)
         assert "Team 1: A" in prompt
