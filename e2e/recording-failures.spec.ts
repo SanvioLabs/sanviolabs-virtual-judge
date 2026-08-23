@@ -127,3 +127,48 @@ test("the recorder asks the browser what it can record", async ({ page, request 
   await expect(page.locator("#btn-stop")).toBeVisible();
   await expect(page.locator("#status")).not.toContainText("Microphone unavailable");
 });
+
+test("a failed event creation says so instead of half-opening the app", async ({ page }) => {
+  await page.goto("/");
+  await page.route("**/api/events", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "no rubric loaded" }),
+        })
+      : route.continue(),
+  );
+
+  await page.locator('button:has-text("New Event")').click();
+  await page.fill("#new-event-name", "Doomed");
+  await page.locator('button:has-text("Create")').click();
+
+  await expect(page.locator("#status")).toContainText("Could not create the event");
+  await expect(page.locator("#status")).toContainText("no rubric loaded");
+  // Not left half-open against an id that does not exist.
+  await expect(page.locator("#main-content")).toHaveClass(/hidden/);
+});
+
+test("a failed submissions load reports instead of showing stale teams", async ({ page, request }) => {
+  const first = await (await request.post("/api/events", { data: { name: "Real Teams" } })).json();
+  await request.post("/api/submissions", { data: { team_name: "Stale Team", event_id: first.id } });
+
+  await page.goto("/");
+  await page.selectOption("#event-select", first.id);
+  await page.locator('nav .btn:has-text("Submissions")').click();
+  await expect(page.locator("#submissions-list")).toContainText("Stale Team");
+
+  // Now make the next load fail. Calling .map on an error object used to throw
+  // into nothing and leave the previous list on screen.
+  await page.route("**/submissions", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "db gone" }) })
+      : route.continue(),
+  );
+  await page.locator('nav .btn:has-text("Judge")').click();
+  await page.locator('nav .btn:has-text("Submissions")').click();
+
+  await expect(page.locator("#submissions-list")).toContainText("Could not load submissions");
+  await expect(page.locator("#submissions-list")).not.toContainText("Stale Team");
+});

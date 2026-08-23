@@ -897,3 +897,51 @@ class TestTheCsvIsSafeToOpen:
         rows = await self._event_with_team(client, "=Weird Name")
         cell = [r[0] for r in rows if r and "Weird" in r[0]][0]
         assert cell == "'=Weird Name"
+
+
+class TestPrfaqDownload:
+    """It used to write a NamedTemporaryFile with delete=False per request, so
+    every download left that team's document in the temp directory for good."""
+
+    async def _with_prfaq(self, client):
+        event_id = await _get_event_id(client)
+        sub = (await client.post("/api/submissions", json={
+            "team_name": "Download Team", "event_id": event_id})).json()
+        server.db.update_submission(sub["id"], transcript="A pitch.")
+        server.db.save_prfaq(sub["id"], {"one_liner": "x"}, "# The Document\n\nBody.", "m")
+        return sub
+
+    async def test_it_returns_the_markdown(self, client):
+        sub = await self._with_prfaq(client)
+        res = await client.get(f"/api/submissions/{sub['id']}/prfaq/download")
+        assert res.status_code == 200
+        assert res.text == "# The Document\n\nBody."
+        assert res.headers["content-type"].startswith("text/markdown")
+
+    async def test_the_filename_is_the_team(self, client):
+        sub = await self._with_prfaq(client)
+        res = await client.get(f"/api/submissions/{sub['id']}/prfaq/download")
+        assert "PRFAQ-Download_Team.md" in res.headers["content-disposition"]
+
+    async def test_it_writes_nothing_to_disk(self, client, monkeypatch):
+        # Asserted directly rather than by watching a directory: reaching for a
+        # temp file at all is the defect, and TMPDIR is cached by tempfile.
+        import tempfile
+
+        def refuse(*a, **kw):
+            raise AssertionError("the download reached for a temp file again")
+
+        monkeypatch.setattr(tempfile, "NamedTemporaryFile", refuse)
+        sub = await self._with_prfaq(client)
+        for _ in range(5):
+            assert (await client.get(f"/api/submissions/{sub['id']}/prfaq/download")).status_code == 200
+
+    async def test_a_missing_prfaq_is_a_404(self, client):
+        event_id = await _get_event_id(client)
+        sub = (await client.post("/api/submissions", json={
+            "team_name": "No Doc", "event_id": event_id})).json()
+        res = await client.get(f"/api/submissions/{sub['id']}/prfaq/download")
+        assert res.status_code == 404
+
+    async def test_an_unknown_submission_is_a_404(self, client):
+        assert (await client.get("/api/submissions/nope/prfaq/download")).status_code == 404

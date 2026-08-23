@@ -127,3 +127,39 @@ class TestNameMatching:
 
     def test_norm_handles_none(self):
         assert _norm_category(None) == ""
+
+
+class TestExportFilenamesAreUnique:
+    """The bundle wrote each team's transcript, review, PRFAQ and audio by a
+    slug of their name. Two teams whose names reduce to the same slug meant the
+    second overwrote the first, and then received the first team's documents in
+    their folder."""
+
+    def _slugs(self, *names):
+        from server import _unique_slugs
+        subs = [{"id": str(i), "team_name": n} for i, n in enumerate(names)]
+        return list(_unique_slugs(subs).values())
+
+    def test_distinct_names_are_unchanged(self):
+        assert self._slugs("Alpha", "Beta") == ["alpha", "beta"]
+
+    def test_the_first_team_keeps_the_clean_name(self):
+        assert self._slugs("Alpha Team", "alpha team") == ["alpha_team", "alpha_team-2"]
+
+    def test_a_separator_difference_still_separates(self):
+        assert self._slugs("Alpha/Team", "Alpha Team") == ["alpha_team", "alpha_team-2"]
+
+    def test_three_way_collisions_keep_counting(self):
+        assert self._slugs("A B", "a  b", "A/B") == ["a_b", "a_b-2", "a_b-3"]
+
+    def test_names_that_reduce_to_nothing_do_not_collide(self):
+        # Both fall back to "team".
+        assert self._slugs("!!!", "???") == ["team", "team-2"]
+
+    def test_every_submission_gets_an_entry(self):
+        from server import _unique_slugs
+        subs = [{"id": f"s{i}", "team_name": "Same"} for i in range(5)]
+        slugs = _unique_slugs(subs)
+        assert len(slugs) == 5
+        assert len(set(slugs.values())) == 5
+        assert set(slugs) == {f"s{i}" for i in range(5)}

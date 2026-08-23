@@ -706,6 +706,13 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, description: desc }),
             });
+            // Creating the event is the first thing anyone does. Unchecked, a
+            // failure here left currentEventId undefined with the main view
+            // open and no message, and every action after it failed oddly.
+            if (!res.ok) {
+                showStatus(`Could not create the event: ${esc(await errorText(res))}`, 'error');
+                return;
+            }
             const event = await res.json();
             currentEventId = event.id;
 
@@ -1002,8 +1009,14 @@
         async function loadSubmissions() {
             if (!currentEventId) return;
             const res = await fetch(`/api/events/${currentEventId}/submissions`);
-            const subs = await res.json();
             const list = document.getElementById('submissions-list');
+            // On an error the body is an object, and calling .map on it threw
+            // into nothing, leaving the previous event's teams on screen.
+            if (!res.ok) {
+                list.innerHTML = `<p style="color:#f87171;">Could not load submissions: ${esc(await errorText(res))}</p>`;
+                return;
+            }
+            const subs = await res.json();
 
             if (subs.length === 0) {
                 list.innerHTML = '<p style="color: #64748b;">No submissions yet.</p>';

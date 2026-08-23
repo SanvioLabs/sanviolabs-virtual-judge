@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from judge import db, openrouter
@@ -143,6 +143,32 @@ def _norm_category(name: str) -> str:
     echoing an id, so case and spacing drift."""
     return " ".join(str(name or "").split()).lower()
 
+
+def _unique_slugs(submissions: list[dict]) -> dict[str, str]:
+    """One distinct filename per team, keyed by submission id.
+
+    Slugs are lowercased and stripped to a conservative character set, so
+    "Alpha Team" and "alpha team" both reduce to alpha_team, and so does
+    "Alpha/Team". The bundle wrote transcripts, reviews and PRFAQs by slug, so
+    the second team silently overwrote the first and then received the first
+    team's document in their folder. Names that reduce to nothing collide even
+    harder, on the fallback.
+
+    Later collisions get a numeric suffix. The first team to appear keeps the
+    clean name, so the common case reads the same as it always did.
+    """
+    slugs: dict[str, str] = {}
+    taken: set[str] = set()
+    for sub in submissions:
+        base = _safe_component(sub["team_name"], "team").lower()
+        slug = base
+        n = 2
+        while slug in taken:
+            slug = f"{base}-{n}"
+            n += 1
+        taken.add(slug)
+        slugs[sub["id"]] = slug
+    return slugs
 
 def _overall_score(scores: list[dict], rubric: dict) -> tuple[float, list[str]]:
     """Weighted average over the categories the model actually returned.
@@ -627,9 +653,14 @@ async def api_get_prfaq(sub_id: str):
 
 @app.get("/api/submissions/{sub_id}/prfaq/download")
 async def api_download_prfaq(sub_id: str):
-    """Download a PRFAQ as a Markdown file."""
-    from tempfile import NamedTemporaryFile
+    """Download a PRFAQ as a Markdown file.
 
+    Served straight from memory. This used to write a NamedTemporaryFile with
+    delete=False and hand back its path, so every download left a copy of that
+    team's document in the system temp directory, permanently and readable by
+    anyone else on the machine. The markdown is already loaded; there was never
+    a reason for it to touch disk.
+    """
     sub = db.get_submission(sub_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
@@ -637,14 +668,8 @@ async def api_download_prfaq(sub_id: str):
     if not prfaq:
         raise HTTPException(status_code=404, detail="No PRFAQ generated for this submission yet")
 
-    # Create a temporary file with the PRFAQ markdown content
-    with NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-        f.write(prfaq["markdown"])
-        temp_path = f.name
-
-    # Return the file with proper headers for download
-    return FileResponse(
-        path=temp_path,
+    return Response(
+        content=prfaq["markdown"],
         media_type="text/markdown",
         headers={"Content-Disposition": f"attachment; filename=PRFAQ-{_safe_component(sub['team_name'], 'team')}.md"}
     )
@@ -1061,8 +1086,9 @@ async def api_export_bundle(event_id: str):
     prfaqs_dir = export_dir / "prfaqs"
     prfaq_count = 0
 
+    team_slugs = _unique_slugs(submissions)
     for sub in submissions:
-        team_slug = _safe_component(sub["team_name"], "team").lower()
+        team_slug = team_slugs[sub["id"]]
         scores = db.get_scores(sub["id"])
         review = db.get_review(sub["id"])
         prfaq = db.get_prfaq(sub["id"])
