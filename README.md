@@ -145,10 +145,17 @@ After all teams have gone:
 ```
 
 A score that came out wrong, a review whose audio failed, a rubric you changed
-after the fact: hit **Re-judge** on that team in the Submissions tab. Their pitch
-runs through the whole pipeline again from the recording, and the new scores
-replace the old ones. It asks first, because the old result may already have been
-read out.
+after the fact: hit **Re-judge** on that team in the Submissions tab. It scores
+the transcript again and speaks a new review, replacing the old ones. It asks
+first, because the old result may already have been read out.
+
+It does not transcribe again. The words do not change between runs, and
+transcription is about a third of the time and the cost. If the transcript
+itself is the problem, from bad audio or a misread language, force a fresh pass:
+
+```bash
+curl -X POST 'localhost:8000/api/submissions/{sub_id}/judge?retranscribe=true'
+```
 
 Then, once the room has cleared:
 
@@ -384,7 +391,7 @@ virtual-judge/
 | `DELETE` | `/api/events/:id` | Delete an event, every submission in it, and their audio. Not recoverable |
 | `POST` | `/api/submissions` | Create a submission `{team_name, event_id}` |
 | `POST` | `/api/submissions/:id/audio` | Upload recorded audio (multipart) |
-| `POST` | `/api/submissions/:id/judge` | Run full pipeline (transcribe → score → speak) |
+| `POST` | `/api/submissions/:id/judge` | Score and speak. Transcribes only if there is no transcript, or with `?retranscribe=true` |
 | `GET` | `/api/events/:id/pending` | Recordings that have not produced a review yet |
 | `POST` | `/api/events/:id/judge-pending` | Judge every waiting recording, one at a time |
 | `GET` | `/api/events/:id/submissions` | List all submissions for an event |

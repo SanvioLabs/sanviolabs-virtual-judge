@@ -654,12 +654,16 @@ async def api_upload_audio(sub_id: str, file: UploadFile):
 
 
 @app.post("/api/submissions/{sub_id}/judge")
-async def api_judge_submission(sub_id: str):
-    """Judge one submission now."""
-    return await _judge_submission(sub_id)
+async def api_judge_submission(sub_id: str, retranscribe: bool = False):
+    """Judge one submission now.
+
+    `?retranscribe=true` forces a fresh pass over the audio. Without it a
+    submission that already has a transcript is scored from the words it has.
+    """
+    return await _judge_submission(sub_id, retranscribe=retranscribe)
 
 
-async def _judge_submission(sub_id: str) -> dict:
+async def _judge_submission(sub_id: str, retranscribe: bool = False) -> dict:
     """Run the full judging pipeline: transcribe → score → generate review audio.
 
     Separate from the route so the backlog runner can call it too. Both want
@@ -682,18 +686,28 @@ async def _judge_submission(sub_id: str) -> dict:
     if not rubric:
         raise HTTPException(status_code=400, detail="Rubric not found")
 
-    # Step 1: Transcribe
-    db.update_submission(sub_id, status="transcribing")
-    try:
-        transcript = await asyncio.to_thread(transcribe_audio, submission["audio_path"])
-    except KeyError:
-        db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file") from None
-    except Exception as e:
-        db.update_submission(sub_id, status="error")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}") from e
+    # Step 1: Transcribe, unless there is already a transcript to score.
+    #
+    # Transcription is about a third of the pipeline's time and cost, and the
+    # words do not change between runs. Re-judging almost always means the
+    # score was wrong, not the transcript, so paying for it twice buys nothing.
+    # `retranscribe` covers the case reuse does not: the transcript itself was
+    # wrong, from bad audio or a misread language.
+    transcript = submission["transcript"]
+    if transcript and not retranscribe:
+        db.update_submission(sub_id, status="scoring")
+    else:
+        db.update_submission(sub_id, status="transcribing")
+        try:
+            transcript = await asyncio.to_thread(transcribe_audio, submission["audio_path"])
+        except KeyError:
+            db.update_submission(sub_id, status="error")
+            raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured — check your .env file") from None
+        except Exception as e:
+            db.update_submission(sub_id, status="error")
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {e}") from e
 
-    db.update_submission(sub_id, transcript=transcript, status="scoring")
+        db.update_submission(sub_id, transcript=transcript, status="scoring")
 
     # Step 2: LLM scoring
     try:

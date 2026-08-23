@@ -240,7 +240,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
-| R48 | A judged team can be re-judged from the Submissions tab. The pitch runs through the whole pipeline again from the recording, and the new scores and review replace the old ones per R31. It confirms first, because it replaces a result that may already have been read out | observed | `rejudgeOne`, `_judge_submission` | `TestRejudgingAJudgedTeam`, `judge-later.spec.ts` |
+| R49 | Re-judging reuses the stored transcript. Transcription runs only when there is none, or when `?retranscribe=true` asks for it, which is the case where the transcript itself was wrong | observed | `_judge_submission` | `TestRejudgingAJudgedTeam` |
+| R48 | A judged team can be re-judged from the Submissions tab. The new scores and review replace the old ones per R31. It confirms first, because it replaces a result that may already have been read out | observed | `rejudgeOne`, `_judge_submission` | `TestRejudgingAJudgedTeam`, `judge-later.spec.ts` |
 | R47 | Events older than a given age, with their recordings, can be removed in one command. Never automatically, never on a timer, and never below an age of one day | observed | `purge_older_than`, `scripts/purge.py` | `tests/test_purge.py` |
 | R46 | Setting `VJ_ACCESS_CODE` requires that code on every route carrying event data, by header or by cookie. Unset, which is the default and every existing install, nothing changes. `/`, `/static/*` and `/api/health` stay open so the page can load and be checked | observed | `require_access_code` | `tests/test_auth.py`, `e2e/access-code.spec.ts` |
 | R45 | Every recording that has not produced a review can be judged in one action, one team at a time, and a team that fails does not stop the rest | observed | `api_judge_pending` | `TestRecordNowJudgeLater` |
@@ -253,15 +254,15 @@ Authority changes hands in exactly three places `[observed]`:
 | R38 | Team names are distinct within an event, checked at registration, matched the same way the finalist round matches them | observed | `api_create_submission` | `TestTeamNamesAreUniqueWithinAnEvent` |
 | R37 | A finalist round needs at least three completed submissions, because the podium it produces is three | observed | `api_run_finalist`, `llm.run_finalist_round` | `TestThePodiumSetsTheMinimum` |
 | R36 | The product is unauthenticated by default and assumes a trusted network. `npm run dev` binds localhost; `npm run start` binds `0.0.0.0` and is an explicit, separate opt-in to exposing the event to the local network, which is when R46's access code is worth setting | observed | `package.json`, README | `TestTheNetworkPosture` |
-| R35 | A submission moves `recording → recorded → transcribing → scoring → speaking → complete`. `recorded` means the audio is captured and judging has not started. `error` is reachable from any stage and is not terminal: a retry re-enters at `transcribing` | observed | `api_upload_audio`, `_judge_submission` | `TestTheStatusSequence` |
+| R35 | A submission moves `recording → recorded → transcribing → scoring → speaking → complete`. `recorded` means the audio is captured and judging has not started. A re-judge that reuses the transcript skips `transcribing` and enters at `scoring`. `error` is reachable from any stage and is not terminal | observed | `api_upload_audio`, `_judge_submission` | `TestTheStatusSequence` |
 | R34 | A submission's status is one of the seven the system defines | observed | `db.SUBMISSION_STATUSES` | `TestStatusIsOneOfOurs` |
 | R33 | Audio is served only under the four names the system writes, and only for a submission or event that still exists. Nothing else in `audio_recordings/` is reachable | observed | `api_audio` | `TestAudioIsServedOnlyForRecordsThatExist` |
 | R32 | A rubric's `judge_persona` sets tone, emphasis and what the judge values. The **shape** of the spoken review, its length, how many improvements it names and how it closes, is fixed by the product prompt and is not a rubric's to set | observed | `judge/llm.py`, `rubrics/example-hackathon.yaml` | `TestTheRubricDoesNotFightThePrompt` |
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Forty-seven of forty-eight are observed and one rests only on the README.
-Forty-seven carry a test. The one without, R19, is a process instruction to
+Forty-eight of forty-nine are observed and one rests only on the README.
+Forty-eight carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each

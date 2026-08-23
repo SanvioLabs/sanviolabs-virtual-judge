@@ -1144,7 +1144,9 @@ class TestTheStatusSequence:
     async def test_a_failed_run_can_be_retried_from_the_start(
         self, mock_transcribe, mock_score, mock_speak, client, monkeypatch
     ):
-        """error re-enters at transcribing, which is why error is not terminal."""
+        """error is not terminal. Where it re-enters depends on how far the
+        failed run got: this one died at scoring, so the transcript survived
+        and R49 reuses it rather than paying for the same words twice."""
         mock_transcribe.return_value = "a pitch"
         mock_score.side_effect = RuntimeError("down")
         mock_speak.return_value = Path("/tmp/f.mp3")
@@ -1166,7 +1168,7 @@ class TestTheStatusSequence:
         res = await client.post(f"/api/submissions/{sub['id']}/judge")
 
         assert res.status_code == 200
-        assert seen == ["transcribing", "scoring", "speaking", "complete"]
+        assert seen == ["scoring", "speaking", "complete"]
 
 
 class TestTeamNamesAreUniqueWithinAnEvent:
@@ -1431,17 +1433,58 @@ class TestRejudgingAJudgedTeam:
     @patch("server.speak")
     @patch("server.score_submission")
     @patch("server.transcribe_audio")
-    async def test_it_reruns_from_the_recording_not_the_stored_transcript(
+    async def test_it_reuses_the_transcript_rather_than_paying_for_it_twice(
         self, mock_transcribe, mock_score, mock_speak, client
     ):
-        """Pat's words: take the pitch and re-judge it. The audio is the input."""
+        """R49. Transcription is about a third of the pipeline's time and cost,
+        and the transcript almost never changes. Re-judging usually means the
+        score was wrong, not the words."""
         mocks = (mock_transcribe, mock_score, mock_speak)
         sub = await self._make_judged(client, mocks, 3, "first")
         mock_transcribe.reset_mock()
 
         await client.post(f"/api/submissions/{sub['id']}/judge")
-        assert mock_transcribe.called, "re-judging skipped transcription"
+        assert not mock_transcribe.called, "re-judging transcribed again"
+        # And it scored the words it already had.
+        assert mock_score.call_args[0][0] == "the pitch as recorded"
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_retranscribe_forces_a_fresh_pass_over_the_audio(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        """For the case the reuse does not cover: the transcript itself was
+        wrong, from bad audio or the wrong language."""
+        mocks = (mock_transcribe, mock_score, mock_speak)
+        sub = await self._make_judged(client, mocks, 3, "first")
+        mock_transcribe.reset_mock()
+        mock_transcribe.return_value = "a better reading of the pitch"
+
+        await client.post(f"/api/submissions/{sub['id']}/judge?retranscribe=true")
+        assert mock_transcribe.called
         assert str(mock_transcribe.call_args[0][0]).endswith(".webm")
+        assert mock_score.call_args[0][0] == "a better reading of the pitch"
+
+    @patch("server.speak")
+    @patch("server.score_submission")
+    @patch("server.transcribe_audio")
+    async def test_a_first_judging_still_transcribes(
+        self, mock_transcribe, mock_score, mock_speak, client
+    ):
+        """There is nothing to reuse, so nothing changes for the live path."""
+        mock_transcribe.return_value = "first words"
+        mock_score.return_value = {
+            "scores": [{"category": "Impact", "score": 4, "rationale": "r"}], "summary": "s"}
+        mock_speak.return_value = Path("/tmp/f.mp3")
+
+        sub = await _create_submission(client, "Fresh")
+        await client.post(
+            f"/api/submissions/{sub['id']}/audio",
+            files={"file": ("t.webm", b"audio bytes", "audio/webm")},
+        )
+        await client.post(f"/api/submissions/{sub['id']}/judge")
+        assert mock_transcribe.called
 
     @patch("server.speak")
     @patch("server.score_submission")
