@@ -211,3 +211,33 @@ Q17. How many teams is one event expected to hold?
              judging per team, which is a property of the room
    Remains:  Nothing. It needed a measurement, not a decision
    Ask:      Nobody
+
+---
+
+## Recommendations
+
+Every question above that is still open is open for one of two reasons: nobody
+recorded why a number is what it is, or somebody has to decide what the product
+should be. Neither is recoverable by reading the code, and inventing a
+rationale would destroy the only signal those lines carry.
+
+What is recoverable is a recommendation. These are mine, they are not history,
+and none of them is in the code. They exist so the decision is a yes or a no
+rather than a blank page.
+
+| # | Recommendation | Why |
+|---|---|---|
+| **Q1** authentication | A single shared access code, off by default, required when `--host 0.0.0.0` is used | The posture is already "trusted network". This makes the LAN opt-in safe without changing the default experience, and it is the smallest thing that stops a stranger deleting an event |
+| **Q2 / Q14** retention | Do not add automatic expiry. Add a documented post-event step and keep deletion manual | Automatic deletion of a recording somebody may still need is worse than a directory that grows. The disclosure, which was the real gap, is done |
+| **Q5** retry budget | Keep three attempts. Measure one real run, then set each call timeout to roughly three times what you observe, rather than the current 180 and 90 seconds | The retries are cheap: six seconds of backoff. The timeouts produce the seventeen minute worst case, and they were never measured against a real response |
+| **Q7** finalist transcript | Keep 6,000 characters | It covers a full five minute pitch and costs about 24k tokens at twenty teams. R41 measured it |
+| **Q8** upload ceiling | Keep 100 MB | A real pitch is about 2 MB, so this is fifty times headroom and still bounds a runaway. It has never been hit |
+| **Q10** default models | Treat as a snapshot, not a decision. Review when a model is deprecated | The only structural requirement is that the transcription model accepts audio input, which is pinned. Which model is a cost and quality choice that ages |
+| **Q12** default rubric | Add an explicit `default: true` in the rubric YAML | "Most recently created wins" is surprising the first time you add a second rubric, and the surprise lands on event day |
+| **Q13** word budgets | Keep 150 to 170, and 180 to 220 | They produce the roughly sixty and ninety second reads the README describes, which is the constraint that matters: the room's patience |
+| **Q16** outage handling | Build "record now, judge later" before anything else on this list | It is the only failure that can cost the whole event rather than one team. Everything else here degrades gracefully |
+
+If you take all nine as written, say so and I will work them in spec, test,
+code, in that order. If you take none, this section is the record of what was
+considered and rejected, which is worth more than an empty question list.
+
