@@ -6,10 +6,11 @@ import json
 import logging
 import os
 import re
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -92,6 +93,70 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 # Audio is served by the route below rather than mounted. A mount publishes the
 # whole directory, so anything that lands in it is reachable, including files no
 # submission refers to and recordings whose submission has since been deleted.
+
+
+# --- Access code -------------------------------------------------------------
+#
+# Off unless VJ_ACCESS_CODE is set, so localhost and every existing install are
+# unchanged. Set it when you expose an event to the room's WiFi, which is the
+# only situation where a stranger can reach the port.
+#
+# The threat this addresses is not sophisticated: somebody on the conference
+# network who finds the port, reads every team's transcript, and deletes the
+# event. A shared code stops that. It is not a login, there are no accounts,
+# and it should not be mistaken for either.
+
+OPEN_PATHS = frozenset({"/", "/api/health", "/api/session"})
+
+SESSION_COOKIE = "vj_access"
+
+
+def access_code() -> str:
+    return (os.environ.get("VJ_ACCESS_CODE") or "").strip()
+
+
+def _authorised(request: Request, code: str) -> bool:
+    # compare_digest on both, so neither the header nor the cookie leaks the
+    # answer through timing.
+    supplied = request.headers.get("X-Access-Code") or request.cookies.get(SESSION_COOKIE) or ""
+    return secrets.compare_digest(supplied, code)
+
+
+@app.middleware("http")
+async def require_access_code(request: Request, call_next):
+    code = access_code()
+    path = request.url.path
+    # The UI itself and its assets have to load, or there is nowhere to type the
+    # code. They carry no event data. Everything that does is behind the check.
+    if not code or path in OPEN_PATHS or path.startswith("/static/"):
+        return await call_next(request)
+
+    if not _authorised(request, code):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "An access code is required. Enter it to continue."},
+        )
+    return await call_next(request)
+
+
+class AccessCode(BaseModel):
+    code: str
+
+
+@app.post("/api/session")
+async def api_session(body: AccessCode):
+    """Exchange the code for a cookie, so the operator types it once."""
+    code = access_code()
+    if not code:
+        return {"status": "open", "access_code_set": False}
+    if not secrets.compare_digest(body.code.strip(), code):
+        raise HTTPException(status_code=401, detail="That code is not right.")
+
+    response = JSONResponse(content={"status": "ok"})
+    # httponly so a script cannot read it back out, samesite=lax because the
+    # only caller is this page.
+    response.set_cookie(SESSION_COOKIE, code, httponly=True, samesite="lax", max_age=60 * 60 * 12)
+    return response
 
 
 # --- Models ---
@@ -315,6 +380,7 @@ async def health(verify: bool = False):
             "scoring": openrouter.scoring_model(),
             "transcription": openrouter.transcription_model(),
         },
+        "access_code_set": bool(access_code()),
         "rubrics_loaded": len(db.list_rubrics()),
         "events_count": len(db.list_events()),
     }

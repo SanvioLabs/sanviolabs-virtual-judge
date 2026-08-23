@@ -54,6 +54,7 @@ Optional behaviour overrides:
 |-----|---------|-------|
 | `VJ_MAX_UPLOAD_MB` | `100` | Ceiling on one recording. A five minute pitch is a couple of megabytes, so this is a guard, not a limit you should meet |
 | `VJ_FINALIST_TRANSCRIPT_CHARS` | `6000` | How much of each pitch the finalist round reads. Enough for a full five minute pitch. Lower it if you point the round at a small-context model |
+| `VJ_ACCESS_CODE` | unset | When set, every route carrying event data requires it. Set it whenever you use `npm run start` |
 | `VJ_DB_PATH` | `judge.db` in the project root | Where the database lives. The test suite sets this so a run never touches your event data |
 
 ### The database
@@ -175,11 +176,20 @@ and export bundles sit on disk until you delete them, with `npm run reset` or by
 deleting an event in the UI. Telling teams their pitch is recorded and judged by
 AI is the organiser's job, and this tool does not do it for you.
 
-> **There is no authentication.** Every route is open to anyone who can reach the
-> port. On `npm run start` that is everyone on the same network, and they can read
-> every transcript, review and PRFAQ, and create submissions of their own. Run it
-> on a network you trust, or stay on `npm run dev`, which binds to localhost only.
-> Do not expose the port to the internet or put it behind a public tunnel.
+**Set an access code when you do.** Without one every route is open to anyone who
+can reach the port: they can read every transcript, review and PRFAQ, create
+submissions, and delete the event.
+
+```bash
+VJ_ACCESS_CODE=pick-something npm run start
+```
+
+The page then asks for it once and remembers it for twelve hours. `/api/health`
+stays open so you can still check the server is up. There are no accounts and no
+per-team access: it is one shared code, which is the right size for a tool one
+person runs from a laptop for two hours, and it is not a substitute for a
+network you trust. Do not expose the port to the internet or put it behind a
+public tunnel.
 
 ## Commands
 

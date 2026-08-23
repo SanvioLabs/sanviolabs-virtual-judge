@@ -110,10 +110,14 @@ class TestTheNetworkPosture:
     def test_exposing_it_is_a_separate_command(self):
         assert "--host 0.0.0.0" in self._scripts()["start"]
 
-    def test_the_readme_says_there_is_no_authentication(self):
+    def test_the_readme_tells_you_to_set_a_code_when_you_expose_it(self):
+        """It used to say only that there was no authentication. There is now,
+        opt-in, and the sentence that matters is when to turn it on."""
         from pathlib import Path
         readme = (Path(__file__).parent.parent / "README.md").read_text()
-        assert "There is no authentication" in readme
+        assert "Set an access code when you do" in readme
+        assert "VJ_ACCESS_CODE" in readme
+        assert "every route is open to anyone who" in readme
 
     def test_the_readme_says_what_leaves_the_machine(self):
         """An operator running this on real participants needs to know their

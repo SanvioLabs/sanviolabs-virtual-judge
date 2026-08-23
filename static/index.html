@@ -433,6 +433,23 @@
 </head>
 <body>
     <div class="container">
+        <!-- ACCESS CODE -->
+        <div class="modal-overlay hidden" id="access-overlay">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="access-title" style="max-width:420px;">
+                <div class="modal-header">
+                    <h2 id="access-title"><i data-lucide="lock" style="display:inline;vertical-align:middle;width:1.2rem;height:1.2rem;margin-right:0.4rem;color:#3b82f6;"></i>Access code</h2>
+                </div>
+                <div class="modal-body">
+                    <p style="margin-bottom:1rem;">This event is running on a shared network. Enter the code the organiser gave you.</p>
+                    <input type="password" id="access-code" placeholder="Access code" autocomplete="off" onkeydown="if(event.key==='Enter')submitAccessCode()">
+                    <p id="access-error" class="hidden" style="color:#f87171;font-size:0.9rem;margin-top:0.6rem;"></p>
+                    <div class="btn-group" style="margin-top:1rem;">
+                        <button class="btn btn-primary" onclick="submitAccessCode()">Enter</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="header-row">
             <div>
                 <h1><i data-lucide="sparkles" style="display:inline;vertical-align:middle;width:2.2rem;height:2.2rem;margin-right:0.5rem;color:#3b82f6;"></i>Virtual Judge</h1>
@@ -1453,6 +1470,50 @@
             document.getElementById('finalist-status').className = 'status';
         }
 
+        // --- Access code ----------------------------------------------------
+        // Off unless the server was started with one. The page itself always
+        // loads, or there would be nowhere to type it.
+
+        async function checkAccess() {
+            try {
+                const health = await (await fetch('/api/health')).json();
+                if (!health.access_code_set) return true;
+                // A cookie from a previous entry is enough.
+                if ((await fetch('/api/events')).ok) return true;
+            } catch {
+                return true;  // Server trouble is not an auth prompt.
+            }
+            document.getElementById('access-overlay').classList.remove('hidden');
+            lucide.createIcons();
+            document.getElementById('access-code').focus();
+            return false;
+        }
+
+        async function submitAccessCode() {
+            const input = document.getElementById('access-code');
+            const err = document.getElementById('access-error');
+            err.classList.add('hidden');
+            try {
+                const res = await fetch('/api/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: input.value }),
+                });
+                if (!res.ok) {
+                    err.textContent = await errorText(res);
+                    err.classList.remove('hidden');
+                    input.select();
+                    return;
+                }
+                document.getElementById('access-overlay').classList.add('hidden');
+                input.value = '';
+                await loadEvents();
+            } catch (e) {
+                err.textContent = e.message;
+                err.classList.remove('hidden');
+            }
+        }
+
         // --- The backlog -----------------------------------------------------
         // A provider outage leaves teams recorded and unjudged. This is how they
         // get judged once it is back, without re-recording anybody.
@@ -1578,9 +1639,9 @@
         });
 
         // Initialize Lucide icons on page load
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             lucide.createIcons();
-            loadEvents();
+            if (await checkAccess()) loadEvents();
         });
     </script>
 </body>

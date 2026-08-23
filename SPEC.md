@@ -240,6 +240,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R46 | Setting `VJ_ACCESS_CODE` requires that code on every route carrying event data, by header or by cookie. Unset, which is the default and every existing install, nothing changes. `/`, `/static/*` and `/api/health` stay open so the page can load and be checked | observed | `require_access_code` | `tests/test_auth.py`, `e2e/access-code.spec.ts` |
 | R45 | Every recording that has not produced a review can be judged in one action, one team at a time, and a team that fails does not stop the rest | observed | `api_judge_pending` | `TestRecordNowJudgeLater` |
 | R44 | A recording survives a failed judging and can be judged at any later time. A provider outage costs the wait, not the pitch | observed | `api_upload_audio`, `_pending` | `TestRecordNowJudgeLater` |
 | R43 | Every provider timeout is roughly four times a measured call, not a guess. Transcription 90s, scoring 60s, speech 60s, and the PRFAQ 180s because it writes a document after the room has cleared | observed, measured 2026-08-23 | `transcribe`, `llm`, `speak`, `prfaq` | `TestTimeoutsTraceToAMeasurement` |
@@ -249,7 +250,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R39 | A rubric is immutable once loaded. Sync is keyed on name and only inserts, so editing a rubric file produces a second rubric and leaves every scored event on the one it was judged against | observed | `rubrics.sync_rubrics_to_db` | `TestRubricsAreImmutableOnceLoaded` |
 | R38 | Team names are distinct within an event, checked at registration, matched the same way the finalist round matches them | observed | `api_create_submission` | `TestTeamNamesAreUniqueWithinAnEvent` |
 | R37 | A finalist round needs at least three completed submissions, because the podium it produces is three | observed | `api_run_finalist`, `llm.run_finalist_round` | `TestThePodiumSetsTheMinimum` |
-| R36 | The product is unauthenticated by design and assumes a trusted network. `npm run dev` binds localhost; `npm run start` binds `0.0.0.0` and is an explicit, separate opt-in to exposing the event to the local network | observed | `package.json`, README | `TestTheNetworkPosture` |
+| R36 | The product is unauthenticated by default and assumes a trusted network. `npm run dev` binds localhost; `npm run start` binds `0.0.0.0` and is an explicit, separate opt-in to exposing the event to the local network, which is when R46's access code is worth setting | observed | `package.json`, README | `TestTheNetworkPosture` |
 | R35 | A submission moves `recording → recorded → transcribing → scoring → speaking → complete`. `recorded` means the audio is captured and judging has not started. `error` is reachable from any stage and is not terminal: a retry re-enters at `transcribing` | observed | `api_upload_audio`, `_judge_submission` | `TestTheStatusSequence` |
 | R34 | A submission's status is one of the seven the system defines | observed | `db.SUBMISSION_STATUSES` | `TestStatusIsOneOfOurs` |
 | R33 | Audio is served only under the four names the system writes, and only for a submission or event that still exists. Nothing else in `audio_recordings/` is reachable | observed | `api_audio` | `TestAudioIsServedOnlyForRecordsThatExist` |
@@ -257,8 +258,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Forty-four of forty-five are observed and one rests only on the README.
-Forty-four carry a test. The one without, R19, is a process instruction to
+Forty-five of forty-six are observed and one rests only on the README.
+Forty-five carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
@@ -333,7 +334,7 @@ follows is what is left.
 
 | Finding | Evidence | Grade |
 |---|---|---|
-| **A recording is still served to anyone who can reach the port**, now only for a submission that exists. The directory-wide exposure is gone; the missing authentication is not, and is Q1 | `api_audio` | observed |
+| **A recording is served to anyone who can reach the port and has the code**, or to anyone at all when no code is set. The directory-wide exposure is gone and the code closes the open-network case. There are still no accounts and no per-team access | `api_audio`, `require_access_code` | observed |
 | **`exports/` still accumulates.** Nothing expires it; `npm run exports:clean` removes them by hand and the README says so. Whether the product should own that lifecycle is Q14 | `api_export_bundle` | observed |
 | **`api_list_event_submissions` issues three queries per submission.** Measured against the largest real event, 15 teams and 46 queries, at 85ms. It is called on a tab switch and not on the live judging path. Left alone deliberately: no requirement constrains it, and grouping the queries would be code no test justifies | measured 2026-08-23 | observed |
 | **The order of statuses is held by a test, not by the database.** R35 pins the sequence the pipeline produces. `update_submission` will still accept any of the six in any order, which is deliberate: the pipeline is the only production writer, so a check there would buy nothing and would make every test that arranges state walk five steps | `db.update_submission` | observed |
