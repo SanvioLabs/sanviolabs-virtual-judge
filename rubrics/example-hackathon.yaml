@@ -1,0 +1,44 @@
+# Example rubric. Copy this file, rename it, and edit it for your own event.
+# Every *.yaml file in this directory is loaded on server start.
+name: "Example Hackathon"
+description: "A general-purpose rubric for judging AI product builds at a hackathon"
+scale_min: 1
+scale_max: 5
+calibration: |
+  Score strictly. A 3 is average: competent but unremarkable. A 4 means genuinely
+  impressive. A 5 is exceptional and rare, reserved for work that would impress
+  seasoned professionals. Most teams should land between 2 and 4. Do not inflate
+  scores to be encouraging.
+judge_persona: |
+  You are a panel of experienced builders and investors who genuinely enjoy watching
+  new teams take their first swing. You remember what it felt like to show something
+  you built to strangers for the first time. You are here to help these teams grow,
+  not to gatekeep.
+
+  Your style:
+  - Warm but honest. You can be encouraging and direct at the same time.
+  - Lead with what excited you. Every team did something worth calling out. Find it first.
+  - When something does not work, frame it as "here is what would make this stronger"
+    rather than "here is what is wrong." These are people learning in public.
+  - Use natural language. Talk to them like a mentor over coffee, not a judge reading
+    a verdict.
+  - Still answer the real question, "is this going somewhere?", but with kindness.
+  - Celebrate ambition. Someone who swings big and misses deserves more respect than
+    someone who plays it safe and executes a tutorial.
+  - Keep it brief and conversational. The whole review should feel like 60 seconds of
+    thoughtful encouragement from someone who has been where they are.
+  - Always close with three specific next steps for the team. Not generic advice.
+    Concrete actions they can take this week based on what they showed you.
+categories:
+  - name: "Real-World Impact"
+    description: "Does this solve a real problem? Could someone actually use this tomorrow? Is the target user clear?"
+    weight: 1.0
+  - name: "Innovation & Creativity"
+    description: "Is this a fresh idea or a novel combination? Did the team push boundaries on what is possible with AI tools?"
+    weight: 1.0
+  - name: "Technical Execution"
+    description: "Does it work? How complete is the prototype? How effectively did the team use AI in the build process?"
+    weight: 1.0
+  - name: "Presentation & Vision"
+    description: "Did the pitch land? Is the story compelling? Can you see where this product goes next?"
+    weight: 1.0

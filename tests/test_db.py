@@ -1,0 +1,217 @@
+"""Tests for the database and rubric modules."""
+
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from judge import db, rubrics
+from judge.rubrics import load_rubric_from_yaml
+
+
+@pytest.fixture(autouse=True)
+def tmp_db(tmp_path):
+    """Use a temporary database for each test."""
+    test_db = tmp_path / "test.db"
+    with patch.object(db, "DB_PATH", test_db):
+        db.init_db()
+        yield test_db
+
+
+class TestEvents:
+    def test_create_and_get_event(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("Hackathon 2026", rubric_id, "A fun event")
+
+        event = db.get_event(event_id)
+        assert event is not None
+        assert event["name"] == "Hackathon 2026"
+        assert event["rubric_id"] == rubric_id
+        assert event["status"] == "active"
+
+    def test_list_events(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        db.create_event("Event A", rubric_id)
+        db.create_event("Event B", rubric_id)
+
+        events = db.list_events()
+        assert len(events) == 2
+
+
+class TestDatabase:
+    def test_create_and_get_rubric(self):
+        categories = [
+            {"name": "Impact", "description": "Real-world impact", "weight": 1.0},
+            {"name": "Innovation", "description": "Creative approach", "weight": 1.0},
+        ]
+        rubric_id = db.create_rubric(
+            name="Test Rubric",
+            categories=categories,
+            scale_min=1,
+            scale_max=5,
+            description="A test rubric",
+            calibration="Score fairly.",
+            judge_persona="You are a judge.",
+        )
+
+        rubric = db.get_rubric(rubric_id)
+        assert rubric is not None
+        assert rubric["name"] == "Test Rubric"
+        assert rubric["scale_min"] == 1
+        assert rubric["scale_max"] == 5
+        assert len(rubric["categories"]) == 2
+        assert rubric["categories"][0]["name"] == "Impact"
+
+    def test_list_rubrics(self):
+        db.create_rubric("Rubric A", [{"name": "X", "description": "x", "weight": 1}])
+        db.create_rubric("Rubric B", [{"name": "Y", "description": "y", "weight": 1}])
+
+        rubrics = db.list_rubrics()
+        assert len(rubrics) == 2
+
+    def test_submission_lifecycle(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("Test Event", rubric_id)
+        sub_id = db.create_submission("Team Alpha", event_id, rubric_id)
+
+        sub = db.get_submission(sub_id)
+        assert sub["team_name"] == "Team Alpha"
+        assert sub["event_id"] == event_id
+        assert sub["status"] == "recording"
+
+        db.update_submission(sub_id, status="transcribing", transcript="Hello world")
+        sub = db.get_submission(sub_id)
+        assert sub["status"] == "transcribing"
+        assert sub["transcript"] == "Hello world"
+
+    def test_list_submissions_by_event(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_a = db.create_event("Event A", rubric_id)
+        event_b = db.create_event("Event B", rubric_id)
+
+        db.create_submission("Team 1", event_a, rubric_id)
+        db.create_submission("Team 2", event_a, rubric_id)
+        db.create_submission("Team 3", event_b, rubric_id)
+
+        subs_a = db.list_submissions(event_id=event_a)
+        subs_b = db.list_submissions(event_id=event_b)
+        assert len(subs_a) == 2
+        assert len(subs_b) == 1
+
+    def test_scores(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("E", rubric_id)
+        sub_id = db.create_submission("Team Beta", event_id, rubric_id)
+
+        db.save_scores(sub_id, [
+            {"category": "Impact", "score": 4, "rationale": "Good problem choice"},
+            {"category": "Innovation", "score": 3, "rationale": "Decent approach"},
+        ])
+
+        scores = db.get_scores(sub_id)
+        assert len(scores) == 2
+
+    def test_review(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("E", rubric_id)
+        sub_id = db.create_submission("Team Gamma", event_id, rubric_id)
+
+        db.save_review(sub_id, 3.5, "Solid effort overall.", "/audio/test.mp3")
+        review = db.get_review(sub_id)
+        assert review["overall_score"] == 3.5
+        assert review["summary"] == "Solid effort overall."
+
+    def test_finalist_run(self):
+        rubric_id = db.create_rubric("R", [{"name": "A", "description": "a", "weight": 1}])
+        event_id = db.create_event("E", rubric_id)
+
+        top_picks = [
+            {"rank": 1, "team_name": "Alpha", "reasoning": "Best overall"},
+            {"rank": 2, "team_name": "Beta", "reasoning": "Strong second"},
+            {"rank": 3, "team_name": "Gamma", "reasoning": "Creative approach"},
+        ]
+        db.save_finalist_run(event_id, rubric_id, top_picks, "Strong cohort overall.")
+
+        run = db.get_latest_finalist_run(event_id)
+        assert run is not None
+        assert len(run["top_picks"]) == 3
+        assert run["top_picks"][0]["team_name"] == "Alpha"
+
+
+class TestAFreshCloneComesUpUsable:
+    """The rest of the suite mocks the rubric sync away, so nothing else proves
+    that a clone with no `judge.db` starts, builds one, and finds a rubric in it.
+
+    This is the first-run path every new user takes, and it is the one that breaks
+    silently: an empty rubrics directory or a rubric that fails to parse leaves a
+    server that starts fine and cannot judge anything.
+    """
+
+    def _fresh_clone(self, tmp_path):
+        """A rubrics directory holding only the files git actually ships."""
+        import shutil
+        repo_rubrics = Path(__file__).parent.parent / "rubrics"
+        clone = tmp_path / "rubrics"
+        clone.mkdir()
+        shutil.copy2(repo_rubrics / "example-hackathon.yaml", clone)
+        return clone
+
+    def test_startup_creates_the_database_and_loads_the_shipped_rubric(self, tmp_path):
+        clone = self._fresh_clone(tmp_path)
+        db_path = tmp_path / "judge.db"
+        with patch.object(db, "DB_PATH", db_path), \
+             patch.object(rubrics, "RUBRICS_DIR", clone):
+            assert not db_path.exists()
+            # Exactly what the FastAPI lifespan does on startup.
+            db.init_db()
+            rubrics.sync_rubrics_to_db()
+
+            assert db_path.exists()
+            loaded = db.list_rubrics()
+            assert len(loaded) == 1
+            assert loaded[0]["name"] == "Example Hackathon"
+            assert len(loaded[0]["categories"]) == 4
+
+    def test_the_shipped_rubric_carries_the_fields_that_drive_the_prompt(self, tmp_path):
+        """Categories alone produce an uncalibrated judge that scores everything a 4."""
+        clone = self._fresh_clone(tmp_path)
+        with patch.object(db, "DB_PATH", tmp_path / "judge.db"), \
+             patch.object(rubrics, "RUBRICS_DIR", clone):
+            db.init_db()
+            rubrics.sync_rubrics_to_db()
+            r = db.get_rubric(rubrics.get_default_rubric_id())
+            assert r["calibration"].strip()
+            assert r["judge_persona"].strip()
+            assert r["scale_min"] == 1 and r["scale_max"] == 5
+
+    def test_an_event_created_on_a_fresh_clone_gets_that_rubric(self, tmp_path):
+        clone = self._fresh_clone(tmp_path)
+        with patch.object(db, "DB_PATH", tmp_path / "judge.db"), \
+             patch.object(rubrics, "RUBRICS_DIR", clone):
+            db.init_db()
+            rubrics.sync_rubrics_to_db()
+            event_id = db.create_event("First Event", rubrics.get_default_rubric_id(), "")
+            assert db.get_rubric(db.get_event(event_id)["rubric_id"])["name"] == "Example Hackathon"
+
+    def test_restarting_the_server_does_not_duplicate_the_rubric(self, tmp_path):
+        """Sync runs on every startup. It is keyed by name and must stay idempotent."""
+        clone = self._fresh_clone(tmp_path)
+        with patch.object(db, "DB_PATH", tmp_path / "judge.db"), \
+             patch.object(rubrics, "RUBRICS_DIR", clone):
+            db.init_db()
+            rubrics.sync_rubrics_to_db()
+            rubrics.sync_rubrics_to_db()
+            rubrics.sync_rubrics_to_db()
+            assert len(db.list_rubrics()) == 1
+
+
+class TestRubrics:
+    def test_load_yaml(self):
+        rubric_path = Path(__file__).parent.parent / "rubrics" / "example-hackathon.yaml"
+        if rubric_path.exists():
+            data = load_rubric_from_yaml(rubric_path)
+            assert data["name"] == "Example Hackathon"
+            assert len(data["categories"]) == 4
+            assert data["scale_min"] == 1
+            assert data["scale_max"] == 5

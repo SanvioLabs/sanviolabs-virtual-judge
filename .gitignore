@@ -1,0 +1,38 @@
+# Environment
+.env
+.venv/
+
+# Database
+judge.db
+judge.db-wal
+judge.db-shm
+
+# Audio files
+audio_recordings/
+
+# Exports
+exports/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
+
+# Node
+node_modules/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Twin-internal files. Never published with the public repo.
+Virtual-Judge.md
+.sanvio-project.yaml
+.kiro-project.yaml
+
+# Event-specific rubrics belong to whoever ran the event.
+# Keep them locally, ship only the generic example.
+rubrics/humanbulb-hackathon.yaml

@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Judge</title>
+    <!-- Favicon: the same Lucide "sparkles" glyph as the header, inlined so the
+         tab icon doesn't depend on the CDN loading. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z'/%3E%3Cpath d='M20 2v4'/%3E%3Cpath d='M22 4h-4'/%3E%3Ccircle cx='4' cy='20' r='2'/%3E%3C/svg%3E">
+    <!-- Pinned: @latest can change upstream between events and silently blank an icon. -->
+    <script src="https://unpkg.com/lucide@1.31.0"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container { max-width: 900px; margin: 0 auto; }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: #f8fafc;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Panels */
+        .panel {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #334155;
+        }
+
+        .panel h2 {
+            font-size: 1.4rem;
+            margin-bottom: 1rem;
+            color: #f1f5f9;
+        }
+
+        /* Inputs */
+        input[type="text"] {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            font-size: 1.2rem;
+            background: #0f172a;
+            border: 2px solid #334155;
+            border-radius: 8px;
+            color: #f8fafc;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus { border-color: #3b82f6; }
+
+        /* Buttons */
+        .btn {
+            padding: 0.8rem 1.5rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #2563eb; }
+
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+        .btn-success { background: #10b981; color: white; }
+        .btn-success:hover:not(:disabled) { background: #059669; }
+
+        .btn-secondary { background: #475569; color: white; }
+        .btn-secondary:hover:not(:disabled) { background: #374151; }
+
+        .btn-gold { background: #f59e0b; color: #1e293b; }
+        .btn-gold:hover:not(:disabled) { background: #d97706; }
+
+        .btn-group { display: flex; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
+
+        /* Recording indicator */
+        .recording-indicator {
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .recording-indicator.active { display: flex; }
+
+        .pulse {
+            width: 14px;
+            height: 14px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .timer {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: #ef4444;
+        }
+
+        /* Status */
+        .status {
+            padding: 0.6rem 1rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .status.active { display: block; }
+        .status.info { background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6; color: #93c5fd; }
+        .status.success { background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; color: #6ee7b7; }
+        .status.error { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #fca5a5; }
+
+        /* Scores display */
+        .scores-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .score-card {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid #334155;
+        }
+
+        .score-card .category { font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.3rem; }
+        .score-card .score-value { font-size: 2.5rem; font-weight: 700; color: #3b82f6; }
+        .score-card .rationale { font-size: 0.8rem; color: #64748b; margin-top: 0.3rem; }
+
+        .overall-score {
+            text-align: center;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #1e3a5f, #1e293b);
+            border-radius: 10px;
+            margin-top: 1rem;
+            border: 1px solid #3b82f6;
+        }
+
+        .overall-score .label { font-size: 1rem; color: #94a3b8; }
+        .overall-score .value { font-size: 3.5rem; font-weight: 700; color: #60a5fa; }
+
+        .summary { margin-top: 1rem; font-size: 1.1rem; line-height: 1.6; color: #cbd5e1; }
+
+        /* Submissions list */
+        .submissions-list { margin-top: 1rem; }
+
+        .submission-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.8rem 1rem;
+            background: #0f172a;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            border: 1px solid #334155;
+        }
+
+        .submission-item .team { font-weight: 600; font-size: 1.1rem; }
+        .submission-item .score-badge {
+            background: #3b82f6;
+            color: white;
+            padding: 0.3rem 0.7rem;
+            border-radius: 20px;
+            font-weight: 700;
+        }
+
+        /* Finalist results */
+        .finalist-result {
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 10px;
+            border: 2px solid;
+        }
+
+        .finalist-result.gold { border-color: #f59e0b; background: rgba(245, 158, 11, 0.05); }
+        .finalist-result.silver { border-color: #94a3b8; background: rgba(148, 163, 184, 0.05); }
+        .finalist-result.bronze { border-color: #cd7c2f; background: rgba(205, 124, 47, 0.05); }
+
+        .finalist-result .rank { font-size: 1.5rem; font-weight: 700; }
+        .finalist-result .team-name { font-size: 1.3rem; font-weight: 600; margin-top: 0.3rem; }
+        .finalist-result .reason { color: #94a3b8; margin-top: 0.5rem; }
+
+        /* Views */
+        .view { display: none; }
+        .view.active { display: block; }
+
+        /* Nav */
+        nav {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        nav .btn { font-size: 0.95rem; padding: 0.6rem 1.2rem; }
+        nav .btn.active { background: #3b82f6; color: white; }
+
+        /* Audio player */
+        audio {
+            width: 100%;
+            margin-top: 1rem;
+            border-radius: 8px;
+        }
+
+        .hidden { display: none !important; }
+
+        /* Audio players — the spoken review and the results announcement are
+           the point of the tool, so they get a label and full width instead of a
+           bare <audio> tag tucked under a wall of text. */
+        .audio-label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin: 1rem 0 0.4rem;
+        }
+
+        .audio-player {
+            display: block;
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Audio pulse animation */
+        .audio-wrap-pulse {
+            animation: audioPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes audioPulse {
+            0%, 100% {
+                background: rgba(59, 130, 246, 0.05);
+                border-color: #334155;
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+            50% {
+                background: rgba(59, 130, 246, 0.15);
+                border-color: #3b82f6;
+                box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+            }
+        }
+
+        #review-audio-wrap {
+            padding: 1rem;
+            border-radius: 8px;
+            border: 2px solid #334155;
+            transition: all 0.3s ease;
+        }
+
+        /* Lucide icons */
+        .btn svg, .btn i { display: inline; vertical-align: middle; }
+        [data-lucide] { display: inline; vertical-align: middle; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i data-lucide="sparkles" style="display:inline;vertical-align:middle;width:2.2rem;height:2.2rem;margin-right:0.5rem;color:#3b82f6;"></i>Virtual Judge</h1>
+        <p class="subtitle">AI-Powered Pitch Evaluation</p>
+
+        <!-- EVENT SELECTOR -->
+        <div class="panel" id="event-selector" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <label style="font-weight:600;color:#94a3b8;white-space:nowrap;"><i data-lucide="calendar" style="width:16px;height:16px;display:inline;vertical-align:middle;margin-right:0.3rem;"></i>Event:</label>
+            <select id="event-select" onchange="selectEvent(this.value)" style="flex:1;min-width:200px;padding:0.6rem 1rem;font-size:1rem;background:#0f172a;border:2px solid #334155;border-radius:8px;color:#f8fafc;outline:none;">
+                <option value="">— Select or create —</option>
+            </select>
+            <button class="btn btn-primary" onclick="showCreateEvent()" style="white-space:nowrap;"><i data-lucide="plus" style="width:16px;height:16px;"></i> New Event</button>
+        </div>
+
+        <!-- CREATE EVENT MODAL -->
+        <div class="panel hidden" id="create-event-panel">
+            <h2>Create Event</h2>
+            <input type="text" id="new-event-name" placeholder="Event name (e.g., AI Builders Hackathon 2026)" autocomplete="off" style="margin-bottom:0.75rem;">
+            <input type="text" id="new-event-desc" placeholder="Description (optional)" autocomplete="off" style="margin-bottom:0.75rem;">
+            <div class="btn-group">
+                <button class="btn btn-success" onclick="handleCreateEvent()"><i data-lucide="check" style="width:16px;height:16px;"></i> Create</button>
+                <button class="btn btn-secondary" onclick="hideCreateEvent()">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Main content (hidden until event selected) -->
+        <div id="main-content" class="hidden">
+            <nav>
+                <button class="btn btn-secondary active" onclick="showView('judge', event)"><i data-lucide="mic" style="width:16px;height:16px;"></i> Judge</button>
+                <button class="btn btn-secondary" onclick="showView('submissions', event)"><i data-lucide="clipboard-list" style="width:16px;height:16px;"></i> Submissions</button>
+                <button class="btn btn-secondary" onclick="showView('finalist', event)"><i data-lucide="trophy" style="width:16px;height:16px;"></i> Finalist</button>
+            </nav>
+
+            <!-- JUDGE VIEW -->
+            <div id="view-judge" class="view active">
+                <div class="panel">
+                    <h2>New Submission</h2>
+                    <input type="text" id="team-name" placeholder="Team name..." autocomplete="off">
+                    <div class="btn-group">
+                        <button class="btn btn-primary" id="btn-start" onclick="startRecording()"><i data-lucide="mic" style="width:16px;height:16px;"></i> Start Recording</button>
+                        <button class="btn btn-danger hidden" id="btn-stop" onclick="stopRecording()"><i data-lucide="square" style="width:16px;height:16px;"></i> Stop & Judge</button>
+                    </div>
+
+                    <div class="recording-indicator" id="recording-indicator">
+                        <div class="pulse"></div>
+                        <span>Recording...</span>
+                        <span class="timer" id="timer">0:00</span>
+                    </div>
+
+                    <!-- Waveform visualizer -->
+                    <canvas id="waveform-canvas" style="width: 100%; height: 120px; background: #0f172a; border-radius: 8px; border: 1px solid #334155; margin-top: 1rem; display: none;"></canvas>
+
+                    <div class="status" id="status"></div>
+                </div>
+
+                <!-- Results panel (shown after judging) -->
+                <div class="panel hidden" id="results-panel">
+                    <h2 id="results-team">Results</h2>
+                    <div id="review-audio-wrap" class="hidden">
+                        <div class="audio-label"><i data-lucide="volume-2" style="width:15px;height:15px;"></i> Spoken review</div>
+                        <audio id="review-audio" controls class="audio-player"></audio>
+                    </div>
+                    <div class="scores-grid" id="scores-grid"></div>
+                    <div class="overall-score">
+                        <div class="label">Overall Score</div>
+                        <div class="value" id="overall-score">-</div>
+                    </div>
+                    <div class="summary" id="review-summary"></div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="resetJudge()"><i data-lucide="arrow-right" style="width:16px;height:16px;"></i> Next Team</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SUBMISSIONS VIEW -->
+            <div id="view-submissions" class="view">
+                <div class="panel">
+                    <h2>All Submissions</h2>
+                    <div class="btn-group" style="margin-bottom: 1rem;">
+                        <button class="btn btn-primary" onclick="exportBundle()"><i data-lucide="folder-output" style="width:16px;height:16px;"></i> Export to Folder</button>
+                        <button class="btn btn-secondary" onclick="exportCSV()"><i data-lucide="file-spreadsheet" style="width:16px;height:16px;"></i> Export CSV</button>
+                        <button class="btn btn-secondary" onclick="exportJSON()"><i data-lucide="file-braces" style="width:16px;height:16px;"></i> Export JSON</button>
+                    </div>
+                    <div class="btn-group" style="margin-bottom: 1rem;">
+                        <button class="btn btn-secondary" id="btn-prfaqs" onclick="generateAllPrfaqs()"><i data-lucide="file-text" style="width:16px;height:16px;"></i> Generate PRFAQs</button>
+                        <span style="color:#64748b;font-size:0.8rem;align-self:center;">Run after the event — takes a minute per team.</span>
+                    </div>
+                    <div class="status" id="export-status"></div>
+                    <div class="submissions-list" id="submissions-list">
+                        <p style="color: #64748b;">No submissions yet.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FINALIST VIEW -->
+            <div id="view-finalist" class="view">
+                <div class="panel">
+                    <h2><i data-lucide="trophy" style="display:inline;vertical-align:middle;width:1.3rem;height:1.3rem;margin-right:0.4rem;"></i> Finalist Round</h2>
+                    <p style="color: #94a3b8; margin-bottom: 1rem;">Compare all submissions and select the top 3 teams.</p>
+                    <button class="btn btn-gold" id="btn-finalist" onclick="runFinalist()"><i data-lucide="crown" style="width:16px;height:16px;"></i> Run Finalist Round</button>
+                    <div class="status" id="finalist-status"></div>
+                    <div id="finalist-audio-wrap" class="hidden">
+                        <div class="audio-label"><i data-lucide="volume-2" style="width:15px;height:15px;"></i> Spoken announcement</div>
+                        <audio id="finalist-audio" controls class="audio-player"></audio>
+                    </div>
+                    <div id="finalist-results" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentSubmissionId = null;
+        let currentEventId = null;
+        let timerInterval = null;
+        let startTime = null;
+
+        // Waveform visualization
+        let audioContext = null;
+        let analyser = null;
+        let waveformAnimationId = null;
+
+        // --- Events ---
+        async function loadEvents() {
+            try {
+                const res = await fetch('/api/events');
+                if (!res.ok) {
+                    console.error('Failed to load events:', res.status);
+                    return;
+                }
+                const events = await res.json();
+                const select = document.getElementById('event-select');
+                select.innerHTML = '<option value="">— Select or create —</option>' +
+                    events.map(e => `<option value="${e.id}">${e.name} (${e.completed_count}/${e.submission_count} judged)</option>`).join('');
+            } catch (err) {
+                console.error('Error loading events:', err);
+            }
+        }
+
+        function selectEvent(eventId) {
+            currentEventId = eventId;
+            if (eventId) {
+                document.getElementById('main-content').classList.remove('hidden');
+            } else {
+                document.getElementById('main-content').classList.add('hidden');
+            }
+            // Every view is scoped to an event, so switching events has to swap
+            // all of them. Otherwise the previous event's scores and finalists
+            // stay on screen and read as belonging to the newly selected one.
+            refreshEventViews();
+        }
+
+        // Reload every event-scoped view from the server.
+        async function refreshEventViews() {
+            resetJudge();
+            clearFinalist();
+            if (!currentEventId) {
+                document.getElementById('submissions-list').innerHTML = '';
+                return;
+            }
+            await Promise.all([loadSubmissions(), loadFinalist()]);
+        }
+
+        function showCreateEvent() {
+            document.getElementById('create-event-panel').classList.remove('hidden');
+            document.getElementById('new-event-name').focus();
+        }
+
+        function hideCreateEvent() {
+            document.getElementById('create-event-panel').classList.add('hidden');
+            document.getElementById('new-event-name').value = '';
+            document.getElementById('new-event-desc').value = '';
+        }
+
+        async function handleCreateEvent() {
+            const name = document.getElementById('new-event-name').value.trim();
+            if (!name) return;
+            const desc = document.getElementById('new-event-desc').value.trim();
+
+            const res = await fetch('/api/events', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description: desc }),
+            });
+            const event = await res.json();
+            currentEventId = event.id;
+
+            hideCreateEvent();
+            await loadEvents();
+            document.getElementById('event-select').value = event.id;
+            document.getElementById('main-content').classList.remove('hidden');
+            // A brand new event has nothing in it — clear whatever the previously
+            // selected event left behind.
+            await refreshEventViews();
+            lucide.createIcons();
+        }
+
+        // --- Navigation ---
+        function showView(view, evt) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById(`view-${view}`).classList.add('active');
+            document.querySelectorAll('nav .btn').forEach(b => b.classList.remove('active'));
+            if (evt) evt.currentTarget.classList.add('active');
+
+            if (view === 'submissions') loadSubmissions();
+            if (view === 'finalist') loadFinalist();
+        }
+
+        // --- Recording ---
+        async function startRecording() {
+            const teamName = document.getElementById('team-name').value.trim();
+            if (!teamName) {
+                showStatus('Enter a team name first.', 'error');
+                return;
+            }
+            if (!currentEventId) {
+                showStatus('Select an event first.', 'error');
+                return;
+            }
+
+            // Create submission
+            const res = await fetch('/api/submissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ team_name: teamName, event_id: currentEventId }),
+            });
+            const sub = await res.json();
+            currentSubmissionId = sub.id;
+
+            // Start recording
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunks.push(e.data);
+            };
+
+            mediaRecorder.start();
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimer, 1000);
+
+            // Setup waveform visualization
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+
+            const canvas = document.getElementById('waveform-canvas');
+            canvas.style.display = 'block';
+            canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+            canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+            drawWaveform();
+
+            document.getElementById('btn-start').classList.add('hidden');
+            document.getElementById('btn-stop').classList.remove('hidden');
+            document.getElementById('recording-indicator').classList.add('active');
+            document.getElementById('team-name').disabled = true;
+        }
+
+        async function stopRecording() {
+            if (!mediaRecorder) return;
+
+            mediaRecorder.stop();
+            clearInterval(timerInterval);
+
+            // Stop waveform animation
+            if (waveformAnimationId) {
+                cancelAnimationFrame(waveformAnimationId);
+                waveformAnimationId = null;
+            }
+            document.getElementById('waveform-canvas').style.display = 'none';
+
+            mediaRecorder.onstop = async () => {
+                // Stop all tracks
+                mediaRecorder.stream.getTracks().forEach(t => t.stop());
+
+                document.getElementById('btn-stop').classList.add('hidden');
+                document.getElementById('recording-indicator').classList.remove('active');
+
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                showStatus('Uploading audio...', 'info');
+
+                // Upload
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.webm');
+                await fetch(`/api/submissions/${currentSubmissionId}/audio`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                // Judge
+                showStatus('<i data-lucide="cpu" style="width:16px;height:16px;display:inline;vertical-align:middle;margin-right:0.4rem;"></i> Transcribing & judging... this takes ~30 seconds.', 'info');
+                const res = await fetch(`/api/submissions/${currentSubmissionId}/judge`, {
+                    method: 'POST',
+                });
+
+                if (!res.ok) {
+                    let errMsg = 'Unknown error';
+                    try {
+                        const err = await res.json();
+                        errMsg = err.detail || JSON.stringify(err);
+                    } catch {
+                        errMsg = await res.text();
+                    }
+                    showStatus(`Error: ${errMsg}`, 'error');
+                    document.getElementById('btn-start').classList.remove('hidden');
+                    document.getElementById('team-name').disabled = false;
+                    return;
+                }
+
+                const result = await res.json();
+                showResults(result);
+            };
+        }
+
+        function updateTimer() {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            document.getElementById('timer').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function drawWaveform() {
+            if (!analyser || !mediaRecorder || mediaRecorder.state === 'inactive') return;
+
+            const canvas = document.getElementById('waveform-canvas');
+            const canvasCtx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Clear canvas
+            canvasCtx.fillStyle = '#0f172a';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw waveform bars
+            const barWidth = (canvas.width / bufferLength) * 2.5;
+            let x = 0;
+
+            canvasCtx.fillStyle = '#3b82f6';
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = (dataArray[i] / 255) * (canvas.height * 0.8);
+                canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+
+            // Continue animation
+            waveformAnimationId = requestAnimationFrame(drawWaveform);
+        }
+
+        // --- Results ---
+        function showResults(result) {
+            hideStatus();
+            const teamName = document.getElementById('team-name').value.trim();
+            document.getElementById('results-team').textContent = `Results: ${teamName}`;
+            document.getElementById('overall-score').textContent = result.overall_score.toFixed(1);
+            document.getElementById('review-summary').textContent = result.summary;
+
+            // Score cards
+            const grid = document.getElementById('scores-grid');
+            grid.innerHTML = result.scores.map(s => `
+                <div class="score-card">
+                    <div class="category">${s.category}</div>
+                    <div class="score-value">${s.score}</div>
+                    <div class="rationale">${s.rationale}</div>
+                </div>
+            `).join('');
+
+            // Audio
+            const audio = document.getElementById('review-audio');
+            audio.src = result.review_audio;
+            const audioWrap = document.getElementById('review-audio-wrap');
+            audioWrap.classList.remove('hidden');
+            audioWrap.classList.add('audio-wrap-pulse');
+
+            document.getElementById('results-panel').classList.remove('hidden');
+        }
+
+        function resetJudge() {
+            document.getElementById('results-panel').classList.add('hidden');
+            const reviewAudio = document.getElementById('review-audio');
+            reviewAudio.pause();
+            reviewAudio.removeAttribute('src');
+            const audioWrap = document.getElementById('review-audio-wrap');
+            audioWrap.classList.add('hidden');
+            audioWrap.classList.remove('audio-wrap-pulse');
+            document.getElementById('btn-start').classList.remove('hidden');
+            document.getElementById('btn-stop').classList.add('hidden');
+            document.getElementById('team-name').value = '';
+            document.getElementById('team-name').disabled = false;
+            document.getElementById('timer').textContent = '0:00';
+            hideStatus();
+            currentSubmissionId = null;
+        }
+
+        // --- Submissions ---
+        async function loadSubmissions() {
+            if (!currentEventId) return;
+            const res = await fetch(`/api/events/${currentEventId}/submissions`);
+            const subs = await res.json();
+            const list = document.getElementById('submissions-list');
+
+            if (subs.length === 0) {
+                list.innerHTML = '<p style="color: #64748b;">No submissions yet.</p>';
+                return;
+            }
+
+            list.innerHTML = subs.map(s => {
+                const score = s.review ? s.review.overall_score.toFixed(1) : '—';
+                const hasReviewAudio = s.review && s.review.audio_path;
+                const reviewAudioSrc = hasReviewAudio ? `/audio/${s.id}_review.mp3` : '';
+                const hasPitchAudio = s.audio_path;
+                const pitchAudioSrc = hasPitchAudio ? `/audio/${s.id}.webm` : '';
+
+                const scoresHtml = s.scores.length > 0
+                    ? `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">${s.scores.map(sc =>
+                        `<span style="background:#1e293b;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.8rem;color:#94a3b8;">${sc.category}: <strong style="color:#60a5fa;">${sc.score}</strong></span>`
+                      ).join('')}</div>`
+                    : '';
+
+                const prfaqBtn = s.transcript
+                    ? `<span id="prfaq-controls-${s.id}" style="display:contents;">${prfaqControls(s.id, s.has_prfaq)}</span>`
+                    : '';
+
+                const audioHtml = (pitchAudioSrc || reviewAudioSrc || prfaqBtn)
+                    ? `<div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
+                        ${pitchAudioSrc ? `<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="playAudio('${pitchAudioSrc}')"><i data-lucide="mic" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Pitch</button>` : ''}
+                        ${reviewAudioSrc ? `<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.3rem 0.7rem;" onclick="playAudio('${reviewAudioSrc}')"><i data-lucide="volume-2" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i> Review</button>` : ''}
+                        ${prfaqBtn}
+                       </div>`
+                    : '';
+
+                const summaryHtml = s.review
+                    ? `<p style="font-size:0.85rem;color:#64748b;margin-top:0.4rem;">${s.review.summary}</p>`
+                    : '';
+
+                return `
+                    <div class="submission-item" style="flex-direction:column;align-items:stretch;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span class="team">${s.team_name}</span>
+                            <span class="score-badge">${score}</span>
+                        </div>
+                        ${scoresHtml}
+                        ${summaryHtml}
+                        ${audioHtml}
+                        <div id="prfaq-${s.id}" class="hidden" style="margin-top:0.75rem;"></div>
+                    </div>
+                `;
+            }).join('');
+
+            // Render Lucide icons in dynamic content
+            lucide.createIcons();
+        }
+
+        // --- PRFAQ ---
+        // Generation is deliberately off the live judging path: it takes far longer
+        // than the pause a room will sit through between teams.
+
+        const PRFAQ_BTN_STYLE = 'font-size:0.8rem;padding:0.3rem 0.7rem;';
+        const prfaqIcon = name =>
+            `<i data-lucide="${name}" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i>`;
+
+        // A team with no PRFAQ gets one button. A team with one gets two, because
+        // reading the document and paying for a fresh one are different decisions
+        // and a single button cannot honestly be labelled for both.
+        function prfaqControls(subId, hasPrfaq) {
+            if (!hasPrfaq) {
+                return `<button class="btn btn-secondary" style="${PRFAQ_BTN_STYLE}" onclick="showPrfaq('${subId}', this)">${prfaqIcon('file-text')} Write PRFAQ</button>`;
+            }
+            return `<button class="btn btn-secondary" style="${PRFAQ_BTN_STYLE}" onclick="showPrfaq('${subId}', this)">${prfaqIcon('file-text')} PRFAQ</button>`
+                 + `<button class="btn btn-secondary" style="${PRFAQ_BTN_STYLE}" onclick="downloadPrfaq('${subId}')">${prfaqIcon('download')} Download</button>`
+                 + `<button class="btn btn-secondary" style="${PRFAQ_BTN_STYLE}" onclick="rewritePrfaq('${subId}', this)">${prfaqIcon('refresh-cw')} Rewrite PRFAQ</button>`;
+        }
+
+        function setPrfaqControls(subId, hasPrfaq) {
+            const host = document.getElementById(`prfaq-controls-${subId}`);
+            if (!host) return;
+            host.innerHTML = prfaqControls(subId, hasPrfaq);
+            lucide.createIcons();
+        }
+
+        async function showPrfaq(subId, btn) {
+            const panel = document.getElementById(`prfaq-${subId}`);
+            if (!panel) return;
+
+            // Second click collapses — the document is long.
+            if (!panel.classList.contains('hidden') && panel.dataset.loaded) {
+                panel.classList.add('hidden');
+                return;
+            }
+
+            panel.classList.remove('hidden');
+            if (panel.dataset.loaded) return;
+
+            await fetchPrfaq(subId, btn, false);
+        }
+
+        async function downloadPrfaq(subId) {
+            try {
+                const res = await fetch(`/api/submissions/${subId}/prfaq/download`);
+                if (!res.ok) {
+                    alert('Failed to download PRFAQ');
+                    return;
+                }
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `PRFAQ-${subId}.md`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (err) {
+                console.error('Download error:', err);
+                alert('Error downloading PRFAQ');
+            }
+        }
+
+        async function rewritePrfaq(subId, btn) {
+            const panel = document.getElementById(`prfaq-${subId}`);
+            if (!panel) return;
+
+            // A rewrite replaces the stored document and spends a minute of model
+            // time. Neither is recoverable by clicking again, so it asks first.
+            if (!confirm('Rewrite this PRFAQ? The current one is replaced, and writing a new one takes about a minute.')) return;
+
+            panel.classList.remove('hidden');
+            await fetchPrfaq(subId, btn, true);
+        }
+
+        async function fetchPrfaq(subId, btn, force) {
+            const panel = document.getElementById(`prfaq-${subId}`);
+            const verb = force ? 'Rewriting' : 'Writing';
+
+            if (btn) { btn.disabled = true; btn.textContent = `${verb}…`; }
+            panel.innerHTML = `<p style="color:#64748b;font-size:0.85rem;">${verb} the PRFAQ — this takes a minute.</p>`;
+
+            let written = force;
+            try {
+                const url = `/api/submissions/${subId}/prfaq${force ? '?force=1' : ''}`;
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Generation failed');
+                panel.innerHTML = renderPrfaq(data);
+                panel.dataset.loaded = '1';
+                written = true;
+            } catch (e) {
+                panel.innerHTML = `<p style="color:#f87171;font-size:0.85rem;">${e.message}</p>`;
+            } finally {
+                // Rebuilt rather than restored: a first write turns "Write PRFAQ"
+                // into "PRFAQ" plus "Rewrite PRFAQ", and the old label would lie.
+                setPrfaqControls(subId, written);
+            }
+        }
+
+        function renderPrfaq(data) {
+            const c = data.content || {};
+            const pr = c.press_release || {};
+            const assumptions = c.assumptions || [];
+            const counts = { 'Tested': 0, 'Partly tested': 0, 'Untested': 0 };
+            assumptions.forEach(a => { counts[a.grade] = (counts[a.grade] || 0) + 1; });
+
+            const gradeColor = g => g === 'Tested' ? '#4ade80' : g === 'Partly tested' ? '#fbbf24' : '#f87171';
+
+            const ledger = assumptions.map(a => `
+                <div style="border-left:2px solid ${gradeColor(a.grade)};padding-left:0.6rem;margin-bottom:0.6rem;">
+                    <div style="font-size:0.85rem;color:#e2e8f0;">${a.assumption}</div>
+                    <div style="font-size:0.75rem;color:${gradeColor(a.grade)};margin-top:0.15rem;">${a.grade}</div>
+                    <div style="font-size:0.78rem;color:#64748b;margin-top:0.15rem;">${a.evidence || ''}</div>
+                </div>`).join('');
+
+            return `
+                <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:0.9rem;">
+                    <div style="font-size:0.7rem;color:#fbbf24;margin-bottom:0.5rem;">⚠️ AI-written from the pitch. Nobody reviewed it — check every fact before it goes anywhere.</div>
+                    <div style="font-size:0.95rem;color:#f1f5f9;font-weight:600;">${pr.headline || c.product_name || ''}</div>
+                    <div style="font-size:0.82rem;color:#94a3b8;margin-top:0.25rem;">${pr.subheadline || c.one_liner || ''}</div>
+                    <div style="font-size:0.8rem;color:#64748b;margin-top:0.7rem;">
+                        ${assumptions.length} assumptions —
+                        <span style="color:#4ade80;">${counts['Tested']} tested</span> ·
+                        <span style="color:#fbbf24;">${counts['Partly tested']} partly</span> ·
+                        <span style="color:#f87171;">${counts['Untested']} untested</span>
+                    </div>
+                    <div style="margin-top:0.7rem;">${ledger}</div>
+                    <details style="margin-top:0.5rem;">
+                        <summary style="cursor:pointer;color:#60a5fa;font-size:0.8rem;">Full document</summary>
+                        <pre style="white-space:pre-wrap;font-size:0.75rem;color:#94a3b8;margin-top:0.5rem;max-height:400px;overflow:auto;">${(data.markdown || '').replace(/</g, '&lt;')}</pre>
+                    </details>
+                </div>`;
+        }
+
+        async function generateAllPrfaqs() {
+            if (!currentEventId) return;
+            const btn = document.getElementById('btn-prfaqs');
+            const statusEl = document.getElementById('export-status');
+            btn.disabled = true;
+            statusEl.textContent = 'Writing PRFAQs — a minute per team...';
+            statusEl.className = 'status active info';
+
+            try {
+                const res = await fetch(`/api/events/${currentEventId}/prfaqs`, { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Generation failed');
+
+                const parts = [`✓ ${data.generated.length} written`];
+                if (data.skipped.length) parts.push(`${data.skipped.length} skipped`);
+                if (data.failed.length) parts.push(`${data.failed.length} failed: ${data.failed.map(f => f.team_name).join(', ')}`);
+                statusEl.textContent = parts.join(' · ');
+                statusEl.className = `status active ${data.failed.length ? 'error' : 'success'}`;
+                await loadSubmissions();
+            } catch (e) {
+                statusEl.textContent = `Error: ${e.message}`;
+                statusEl.className = 'status active error';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function playAudio(src) {
+            // Reuse a global audio player
+            if (!window._audioPlayer) {
+                window._audioPlayer = new Audio();
+            }
+            window._audioPlayer.src = src;
+            window._audioPlayer.play();
+        }
+
+        // --- Export ---
+        async function exportBundle() {
+            if (!currentEventId) return;
+            const statusEl = document.getElementById('export-status');
+            statusEl.textContent = 'Exporting...';
+            statusEl.className = 'status active info';
+
+            const res = await fetch(`/api/events/${currentEventId}/export/bundle`);
+            if (!res.ok) {
+                const err = await res.json();
+                statusEl.textContent = `Error: ${err.detail}`;
+                statusEl.className = 'status active error';
+                return;
+            }
+
+            const data = await res.json();
+            statusEl.textContent = `✓ Exported ${data.files} files to: ${data.path}`;
+            statusEl.className = 'status active success';
+        }
+
+        function exportCSV() {
+            if (!currentEventId) return;
+            window.open(`/api/events/${currentEventId}/export/csv`, '_blank');
+        }
+
+        function exportJSON() {
+            if (!currentEventId) return;
+            window.open(`/api/events/${currentEventId}/export/json`, '_blank');
+        }
+
+        // --- Finalist ---
+        async function runFinalist() {
+            if (!currentEventId) return;
+            const btn = document.getElementById('btn-finalist');
+            btn.disabled = true;
+            showFinalistStatus('Running finalist round... comparing all teams.', 'info');
+
+            const res = await fetch(`/api/events/${currentEventId}/finalist`, { method: 'POST' });
+
+            if (!res.ok) {
+                const err = await res.json();
+                showFinalistStatus(`Error: ${err.detail}`, 'error');
+                btn.disabled = false;
+                return;
+            }
+
+            const result = await res.json();
+            showFinalistResults(result);
+            btn.disabled = false;
+        }
+
+        // Load a finalist round already stored for this event, so switching
+        // events (or reloading the page) shows the result instead of an empty
+        // panel that looks like the round was never run.
+        async function loadFinalist() {
+            if (!currentEventId) {
+                clearFinalist();
+                return;
+            }
+            try {
+                const res = await fetch(`/api/events/${currentEventId}/finalist/latest`);
+                if (!res.ok) {
+                    clearFinalist();
+                    return;
+                }
+                // autoplay=false — announcing results is a deliberate act, not
+                // something that should fire because you changed a dropdown.
+                showFinalistResults(await res.json(), false);
+            } catch (err) {
+                console.error('Error loading finalist results:', err);
+                clearFinalist();
+            }
+        }
+
+        function clearFinalist() {
+            const container = document.getElementById('finalist-results');
+            container.innerHTML = '';
+            container.classList.add('hidden');
+            const audio = document.getElementById('finalist-audio');
+            audio.pause();
+            audio.removeAttribute('src');
+            document.getElementById('finalist-audio-wrap').classList.add('hidden');
+            hideFinalistStatus();
+        }
+
+        function showFinalistResults(result, autoplay = true) {
+            hideFinalistStatus();
+            const container = document.getElementById('finalist-results');
+            const colors = ['gold', 'silver', 'bronze'];
+            const icons = ['medal', 'medal', 'medal'];
+
+            container.innerHTML = result.top_picks.map((pick, i) => `
+                <div class="finalist-result ${colors[i]}">
+                    <div class="rank"><i data-lucide="${icons[i]}" style="display:inline;vertical-align:middle;width:1.5rem;height:1.5rem;margin-right:0.3rem;"></i> #${pick.rank}</div>
+                    <div class="team-name">${pick.team_name}</div>
+                    <div class="reason">${pick.reasoning}</div>
+                </div>
+            `).join('') + `<div class="summary">${result.reasoning}</div>`;
+
+            container.classList.remove('hidden');
+
+            // Play audio
+            const audio = document.getElementById('finalist-audio');
+            const audioWrap = document.getElementById('finalist-audio-wrap');
+            if (result.audio) {
+                audio.src = result.audio;
+                audioWrap.classList.remove('hidden');
+                if (autoplay) audio.play();
+            } else {
+                audio.removeAttribute('src');
+                audioWrap.classList.add('hidden');
+            }
+
+            // Re-render Lucide icons for dynamic content
+            lucide.createIcons();
+        }
+
+        // --- Status helpers ---
+        function showStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.innerHTML = msg;
+            el.className = `status active ${type}`;
+        }
+
+        function hideStatus() {
+            document.getElementById('status').className = 'status';
+        }
+
+        function showFinalistStatus(msg, type) {
+            const el = document.getElementById('finalist-status');
+            el.innerHTML = msg;
+            el.className = `status active ${type}`;
+        }
+
+        function hideFinalistStatus() {
+            document.getElementById('finalist-status').className = 'status';
+        }
+
+        // Initialize Lucide icons on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            loadEvents();
+        });
+    </script>
+</body>
+</html>
