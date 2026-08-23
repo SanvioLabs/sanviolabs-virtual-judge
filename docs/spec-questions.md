@@ -100,6 +100,10 @@ Q5. Why three retries, and why exponential backoff from two seconds?
    Found:    `judge/retry.py`, applied in `llm.py:31,98`, `transcribe.py:75`, `speak.py:12`, `prfaq.py:240`
    Behaviour: Every external call retries three times `[observed]`. No stated
              reason `[undecided]`
+   Note:     The backoff is not the expensive part. Two attempts of waiting is
+             six seconds; the call timeouts behind them are what produce the
+             seventeen minute worst case in R40. If this number is revisited,
+             the timeouts are the ones that matter
    Depends:  Whether it was set against a provider rate limit, and if so which
              provider, because the default models have changed since
    Ask:      Pat
@@ -188,13 +192,15 @@ Q15. Is serving every recording from an open static mount intended?
    Ask:      Pat, under Q1
 
 Q16. What should happen when a provider is down mid-event?
-   Found:    `judge/retry.py` covers a transient failure; nothing covers a sustained one
-   Behaviour: Three attempts, then a 500 naming the stage. The team is left
-             unjudged with the room waiting. There is no degraded mode, no
-             queue, and no way to record now and judge later `[observed]`
-   Depends:  Whether "record now, judge later" is a requirement. It is the
-             difference between an outage costing one team and costing the
-             event
+   Status:   **Half closed.** The invisible half is fixed. The worst case is
+             quantified in the spec at roughly seventeen minutes, and the UI now
+             counts elapsed time instead of repeating "about thirty seconds"
+             while nothing happens, so a slow run is distinguishable from a dead
+             one. R40
+   Found:    the per-call timeouts in `judge/`, `startJudgingClock`
+   Remains:  Whether "record now, judge later" should exist, and whether the
+             pipeline should have a total deadline. Both are features and both
+             pick a number I would be inventing
    Ask:      Pat
 
 Q17. How many teams is one event expected to hold?

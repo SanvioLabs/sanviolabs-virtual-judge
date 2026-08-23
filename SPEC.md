@@ -240,6 +240,7 @@ Authority changes hands in exactly three places `[observed]`:
 | R27 | A truncated model response is reported as a budget problem, not a syntax error | observed | `message_content`, `extract_json` | `TestExtractJson` |
 | R28 | Judging holds the event loop for no part of its run | observed | `asyncio.to_thread` at every external step | `TestJudgingDoesNotBlockTheServer` |
 | R29 | The operator is told what failed, at which stage, and can retry without reloading | observed | pipeline handlers, `resetToReady` | `e2e/recording-failures.spec.ts` |
+| R40 | While judging runs the operator sees elapsed time, not a fixed promise. The pipeline is usually about thirty seconds and its worst case, every provider call hanging to its timeout across three retries, is roughly seventeen minutes | observed | `startJudgingClock`, the timeouts in `judge/` | `recording-failures.spec.ts` |
 | R39 | A rubric is immutable once loaded. Sync is keyed on name and only inserts, so editing a rubric file produces a second rubric and leaves every scored event on the one it was judged against | observed | `rubrics.sync_rubrics_to_db` | `TestRubricsAreImmutableOnceLoaded` |
 | R38 | Team names are distinct within an event, checked at registration, matched the same way the finalist round matches them | observed | `api_create_submission` | `TestTeamNamesAreUniqueWithinAnEvent` |
 | R37 | A finalist round needs at least three completed submissions, because the podium it produces is three | observed | `api_run_finalist`, `llm.run_finalist_round` | `TestThePodiumSetsTheMinimum` |
@@ -251,8 +252,8 @@ Authority changes hands in exactly three places `[observed]`:
 | R31 | Re-judging a submission replaces its scores and its review rather than adding to them | observed | `db.save_scores`, `save_review`, `save_prfaq` | `TestRejudgingReplaces` |
 | R30 | A backup of an event is `judge.db` **and** `audio_recordings/`. The database holds every score, transcript, review and PRFAQ, and no audio | observed | schema, `submissions.audio_path` | `TestWhatABackupActuallyCovers` |
 
-Thirty-eight of thirty-nine are observed and one rests only on the README.
-Thirty-eight carry a test. The one without, R19, is a process instruction to
+Thirty-nine of forty are observed and one rests only on the README.
+Thirty-nine carry a test. The one without, R19, is a process instruction to
 the operator rather than a behaviour of the system, so no test can hold it.
 
 R31 through R34 were findings on the first pass rather than requirements. Each
@@ -288,6 +289,16 @@ overnight or unattended run has no way to report anything.
 a transient error; a sustained one leaves the team unjudged with the room
 waiting, and there is no degraded mode, no queue, and no way to record now and
 judge later `[observed]`. Whether that is acceptable is `[undecided]`.
+
+**How long that failure takes to become visible** is now stated rather than
+implied. Each provider call has its own timeout, 180 seconds for transcription
+and 180 for the PRFAQ, 90 for scoring, and the ElevenLabs client's default for
+speech. Each is retried three times with 2 and 4 second backoffs. A run in
+which every call hangs to its ceiling therefore takes on the order of
+seventeen minutes, against a UI that used to say "this takes ~30 seconds" and
+never changed. It counts now, and says so past ninety seconds. Nothing bounds
+the total and nothing cancels it: the operator's remedy is still to reload
+`[observed]`.
 
 ## 9. Subsystems
 

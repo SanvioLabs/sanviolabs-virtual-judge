@@ -172,3 +172,42 @@ test("a failed submissions load reports instead of showing stale teams", async (
   await expect(page.locator("#submissions-list")).toContainText("Could not load submissions");
   await expect(page.locator("#submissions-list")).not.toContainText("Stale Team");
 });
+
+test("judging shows elapsed time rather than a static promise", async ({ page, request }) => {
+  // The message said "this takes ~30 seconds" and never changed. The pipeline's
+  // worst case, every provider call hanging to its timeout through three
+  // retries, is about seventeen minutes. Against a static line the operator
+  // cannot tell a slow run from a dead one, with a room watching.
+  const ev = await (await request.post("/api/events", { data: { name: "Clock" } })).json();
+  await page.goto("/");
+  await page.selectOption("#event-select", ev.id);
+  await page.fill("#team-name", "Patient Team");
+
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  await page.route("**/judge", async (route) => {
+    await held;
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "released" }),
+    });
+  });
+
+  await page.locator("#btn-start").click();
+  await expect(page.locator("#btn-stop")).toBeVisible();
+  await page.waitForTimeout(600);
+  await page.locator("#btn-stop").click();
+
+  await expect(page.locator("#status")).toContainText("Transcribing", { timeout: 10_000 });
+  await expect(page.locator("#status")).toContainText("0:0");
+  // It moves, which is the whole point.
+  await expect(page.locator("#status")).toContainText("0:02", { timeout: 8_000 });
+
+  release();
+  await expect(page.locator("#status")).toContainText("released", { timeout: 10_000 });
+  // And it stops when the run ends, rather than counting forever.
+  const settled = await page.locator("#status").textContent();
+  await page.waitForTimeout(1500);
+  expect(await page.locator("#status").textContent()).toBe(settled);
+});

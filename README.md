@@ -121,6 +121,10 @@ the PRFAQs afterwards. It is the fastest way to hand the laptop to someone else.
 Enter team name → 🎙️ Record → ⏹️ Stop → ⏳ ~30s processing → 🔊 Review plays back → ➡️ Next team
 ```
 
+The processing step counts elapsed time on screen. It is usually around thirty
+seconds. If a provider hangs, retries can push a single team into minutes, so
+the number on screen is the real one and the thirty is the typical one.
+
 After all teams have gone:
 
 ```

@@ -875,6 +875,35 @@
 
         }
 
+        // The judging pipeline says "about thirty seconds" and usually is. Its
+        // worst case, if every provider call hangs to its own timeout and burns
+        // all three retries, is roughly seventeen minutes. Against a static
+        // message the operator cannot tell a slow run from a dead one, with a
+        // room watching. So the message counts.
+        let judgingTimer = null;
+
+        function startJudgingClock() {
+            const started = Date.now();
+            const render = () => {
+                const s = Math.floor((Date.now() - started) / 1000);
+                const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+                showStatus(
+                    `<i data-lucide="cpu" style="width:16px;height:16px;display:inline;vertical-align:middle;margin-right:0.4rem;"></i>`
+                    + ` Transcribing &amp; judging... <strong>${clock}</strong>`
+                    + (s > 90 ? ' &nbsp;<span style="color:#fbbf24;">taking longer than usual</span>' : ''),
+                    'info',
+                );
+                lucide.createIcons();
+            };
+            render();
+            judgingTimer = setInterval(render, 1000);
+        }
+
+        function stopJudgingClock() {
+            if (judgingTimer) clearInterval(judgingTimer);
+            judgingTimer = null;
+        }
+
         async function handleRecordingStopped() {
             mediaRecorder.stream.getTracks().forEach(t => t.stop());
             document.getElementById('btn-stop').classList.add('hidden');
@@ -908,10 +937,11 @@
                     return;
                 }
 
-                showStatus('<i data-lucide="cpu" style="width:16px;height:16px;display:inline;vertical-align:middle;margin-right:0.4rem;"></i> Transcribing & judging... this takes ~30 seconds.', 'info');
+                startJudgingClock();
                 const res = await fetch(`/api/submissions/${currentSubmissionId}/judge`, {
                     method: 'POST',
                 });
+                stopJudgingClock();
                 if (!res.ok) {
                     showStatus(`Error: ${esc(await errorText(res))}`, 'error');
                     resetToReady();
@@ -920,6 +950,7 @@
 
                 showResults(await res.json());
             } catch (err) {
+                stopJudgingClock();
                 showStatus(`Something went wrong: ${esc(err.message || err)}`, 'error');
                 resetToReady();
             }
