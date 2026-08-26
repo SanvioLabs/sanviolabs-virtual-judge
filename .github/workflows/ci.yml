@@ -20,6 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          disable-file-monitoring: false
+          disable-telemetry: true
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -52,6 +58,13 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
+
+      - uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          disable-file-monitoring: false
+          disable-telemetry: true
+
       - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
@@ -61,6 +74,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          disable-file-monitoring: false
+          disable-telemetry: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -86,6 +105,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          disable-file-monitoring: false
+          disable-telemetry: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
