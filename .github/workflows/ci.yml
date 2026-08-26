@@ -76,6 +76,9 @@ jobs:
       - name: Run tests
         env:
           MOCK_EXTERNALS: "true"
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
+          DEPLOY_ENV: "ci"
         run: uv run pytest tests/ -v
 
   e2e:
@@ -106,6 +109,10 @@ jobs:
 
       # playwright.config.ts starts the server itself, with MOCK_EXTERNALS set.
       - name: Run Playwright
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
+          DEPLOY_ENV: "ci"
         run: npx playwright test
 
       - name: Upload the report when something fails

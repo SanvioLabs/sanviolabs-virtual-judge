@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import secrets
+import subprocess
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -519,6 +520,37 @@ async def health(verify: bool = False):
             result["status"] = "key_check_failed"
 
     return result
+
+
+@app.get("/api/version")
+def version():
+    """Deployment traceability — returns build and commit information.
+
+    Format: env #build_number: date (commit_sha)
+    Example: staging #42: Aug 25, 2026 (8824ea7)
+    """
+    env = os.environ.get("DEPLOY_ENV", "dev")
+    build_number = os.environ.get("GITHUB_RUN_NUMBER", "dev")
+    commit_sha = os.environ.get("GITHUB_SHA", "")
+    if commit_sha:
+        commit_sha = commit_sha[:7]
+
+    # Get the current date
+    deploy_date = datetime.now(UTC).strftime("%b %d, %Y")
+
+    # Build the version string
+    version_str = f"{env} #{build_number}: {deploy_date}"
+    if commit_sha:
+        version_str += f" ({commit_sha})"
+
+    return {
+        "version": version_str,
+        "environment": env,
+        "build_number": build_number,
+        "commit": commit_sha,
+        "date": deploy_date,
+        "app_version": "0.2.0",
+    }
 
 
 def _verify_providers() -> dict:

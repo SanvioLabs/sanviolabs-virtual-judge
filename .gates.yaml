@@ -1,0 +1,31 @@
+repo_baseline:
+  name: Repository baseline standards
+  description: Linting, testing, CI, and supply chain controls
+  checks:
+    - check: "pre-commit hooks installed"
+      command: "test -f .git/hooks/pre-commit"
+    - check: "ruff linting passes"
+      command: "uv run ruff check ."
+    - check: "eslint linting passes"
+      command: "npx eslint ."
+    - check: "pytest tests pass"
+      command: "uv run pytest tests/ -q"
+    - check: "playwright e2e tests pass"
+      command: "npx playwright test"
+    - check: "no .env tracked in git"
+      command: "! git ls-files .env | grep -q ."
+    - check: "lock files committed"
+      command: "test -f uv.lock && test -f package-lock.json"
+
+build_ready:
+  name: Build readiness gate
+  description: Project is ready for CI pipeline and staging deployment
+  depends_on:
+    - repo_baseline
+  checks:
+    - check: "version endpoint exists"
+      command: "grep -r 'def.*version\\|@app.get.*version' judge/"
+    - check: "playright config present"
+      command: "test -f playwright.config.ts"
+    - check: ".editorconfig present"
+      command: "test -f .editorconfig"
