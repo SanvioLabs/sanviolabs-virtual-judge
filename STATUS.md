@@ -24,7 +24,9 @@ AI-powered judging for hackathons and pitch events. Records pitches, transcribes
 
 ### Remaining (Scale phase only)
 - ⚠️ No OSV Scanner in CI — add for production
-- ⚠️ No Harden-Runner in CI — add for production
+
+### Scale Phase (Completed)
+- ✅ Harden-Runner added to all CI jobs
 
 ### Critical (resolved)
 - 🔴 ~~`.env` tracked in git with live keys~~ → Keys rotated 2026-08-25
@@ -68,5 +70,4 @@ AI-powered judging for hackathons and pitch events. Records pitches, transcribes
 
 1. Address ESLint race condition warnings (Polish phase)
 2. Add OSV Scanner to CI (Production phase)
-3. Add Harden-Runner action to CI (Production phase)
-4. Create deployment guide (if hosting externally)
+3. Create deployment guide (if hosting externally)
