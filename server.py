@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import secrets
-import subprocess
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path

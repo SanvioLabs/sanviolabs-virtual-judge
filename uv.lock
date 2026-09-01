@@ -1233,7 +1233,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "edge-tts", marker = "extra == 'demo'", specifier = ">=7.2.8" },
+    { name = "edge-tts", marker = "extra == 'demo'", specifier = "==7.2.8" },
     { name = "elevenlabs", specifier = "==2.64.0" },
     { name = "fastapi", specifier = "==0.115.12" },
     { name = "openai", specifier = "==3.3.1" },
