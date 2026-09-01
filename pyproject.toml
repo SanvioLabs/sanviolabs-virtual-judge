@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.141.1",
-    "uvicorn==0.34.2",
+    "uvicorn==0.52.4",
     "openai==3.6.0",
     "elevenlabs==2.65.0",
     "pyyaml==6.0.3",
