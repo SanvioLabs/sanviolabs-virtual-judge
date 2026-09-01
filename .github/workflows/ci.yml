@@ -139,10 +139,13 @@ jobs:
         with:
           node-version: "20"
 
+      # --with-deps shells out to apt-get under sudo, which Harden-Runner's
+      # disable-sudo blocks. The ubuntu-latest image already ships Chromium's
+      # system libraries, so install the browser alone and keep sudo disabled.
       - name: Install Playwright and its browser
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
 
       # playwright.config.ts starts the server itself, with MOCK_EXTERNALS set.
       - name: Run Playwright
