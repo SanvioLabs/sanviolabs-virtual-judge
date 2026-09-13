@@ -8,7 +8,7 @@ dependencies = [
     "fastapi==0.141.1",
     "uvicorn==0.52.4",
     "openai==3.6.0",
-    "elevenlabs==2.65.0",
+    "elevenlabs==2.67.0",
     "pyyaml==6.0.3",
     "python-multipart==0.0.32",
 ]
