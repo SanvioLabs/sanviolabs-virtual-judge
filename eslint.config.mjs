@@ -55,7 +55,7 @@ export default [
       //
       // They become useful the day the JS moves out of index.html and binds
       // its handlers in code, which is the change atlas recommended. Until
-      // then this file cannot answer "is this function dead", and `reaper` is
+      // then this file cannot answer "is this function dead", and `find-dead-code` is
       // the tool that can.
       "no-implicit-globals": "off",
       "no-unused-vars": "off",
