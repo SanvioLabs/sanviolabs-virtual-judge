@@ -24,7 +24,7 @@
     "reset": "npm run db:reset && npm run audio:clean && npm run exports:clean"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
+    "@playwright/test": "1.63.0",
     "eslint": "^10.10.0",
     "eslint-plugin-html": "^8.2.0",
     "globals": "^17.12.0"
